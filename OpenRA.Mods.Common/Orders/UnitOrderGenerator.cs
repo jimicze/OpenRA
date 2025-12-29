@@ -159,10 +159,9 @@ namespace OpenRA.Mods.Common.Orders
 			if (mi.Modifiers.HasModifier(Modifiers.Alt))
 				modifiers |= TargetModifiers.ForceMove;
 
-			var orders = self.TraitsImplementing<IIssueOrder>()
-				.SelectMany(trait => trait.Orders.Select(x => new { Trait = trait, Order = x }))
-				.OrderByDescending(x => x.Order.OrderPriority)
-				.ToList();
+			// PERF: Use pre-cached and pre-sorted IssueOrderTargeters from Actor
+			// This avoids per-click allocations (anonymous objects, list) and sorting
+			var orders = self.IssueOrderTargeters;
 
 			for (var i = 0; i < 2; i++)
 			{
