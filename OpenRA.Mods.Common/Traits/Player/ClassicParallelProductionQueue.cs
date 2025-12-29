@@ -1,4 +1,4 @@
-﻿#region Copyright & License Information
+#region Copyright & License Information
 /*
  * Copyright (c) The OpenRA Developers and Contributors
  * This file is part of OpenRA, which is free software. It is made
@@ -88,10 +88,16 @@ namespace OpenRA.Mods.Common.Traits
 			if (item == null)
 				return;
 
-			var parallelBuilds = Queue.FindAll(i => !i.Paused && !i.Done)
-				.GroupBy(i => i.Item)
-				.ToList()
-				.Count - 1;
+			// PERF: Use HashSet to count distinct items instead of GroupBy().ToList().Count
+			// This avoids allocating IGrouping objects and intermediate lists
+			var distinctItems = new HashSet<string>();
+			foreach (var i in Queue)
+			{
+				if (!i.Paused && !i.Done)
+					distinctItems.Add(i.Item);
+			}
+
+			var parallelBuilds = distinctItems.Count - 1;
 
 			if (parallelBuilds > 0 && !developerMode.FastBuild)
 			{
@@ -221,10 +227,15 @@ namespace OpenRA.Mods.Common.Traits
 
 		public override int RemainingTimeActual(ProductionItem item)
 		{
-			var parallelBuilds = Queue.FindAll(i => !i.Paused && !i.Done)
-				.GroupBy(i => i.Item)
-				.ToList()
-				.Count;
+			// PERF: Use HashSet to count distinct items instead of GroupBy().ToList().Count
+			var distinctItems = new HashSet<string>();
+			foreach (var i in Queue)
+			{
+				if (!i.Paused && !i.Done)
+					distinctItems.Add(i.Item);
+			}
+
+			var parallelBuilds = distinctItems.Count;
 			return item.RemainingTimeActual *
 				parallelBuilds *
 				info.ParallelPenaltyBuildTimeMultipliers[Math.Min(parallelBuilds - 1, info.ParallelPenaltyBuildTimeMultipliers.Length - 1)] / 100;
