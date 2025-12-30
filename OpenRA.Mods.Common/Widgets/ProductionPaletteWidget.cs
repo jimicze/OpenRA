@@ -134,6 +134,7 @@ namespace OpenRA.Mods.Common.Widgets
 		// Per-tick cache for AllBuildables to avoid re-sorting on every access
 		ActorInfo[] cachedBuildables;
 		int cachedBuildablesTick = -1;
+		ProductionQueue cachedBuildablesQueue;
 
 		[CustomLintableHotkeyNames]
 		public static IEnumerable<string> LinterHotkeyNames(MiniYamlNode widgetNode, Action<string> emitError)
@@ -231,12 +232,13 @@ namespace OpenRA.Mods.Common.Widgets
 					return [];
 
 				var currentTick = World.WorldTick;
-				if (cachedBuildablesTick != currentTick)
+				if (cachedBuildablesTick != currentTick || cachedBuildablesQueue != CurrentQueue)
 				{
 					cachedBuildables = CurrentQueue.AllItems()
 						.OrderBy(a => BuildableInfo.GetTraitForQueue(a, CurrentQueue.Info.Type).GetBuildPaletteOrder(a, CurrentQueue))
 						.ToArray();
 					cachedBuildablesTick = currentTick;
+					cachedBuildablesQueue = CurrentQueue;
 				}
 
 				return cachedBuildables;
