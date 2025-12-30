@@ -10,7 +10,6 @@
 #endregion
 
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using OpenRA.Traits;
 
@@ -96,8 +95,10 @@ namespace OpenRA.Mods.Common.Traits
 
 		void RemoveActorsFromAllControlGroups(IEnumerable<Actor> actors)
 		{
+			// PERF: Convert to HashSet for O(1) Contains checks instead of O(n)
+			var actorSet = actors as HashSet<Actor> ?? actors.ToHashSet();
 			for (var i = 0; i < Groups.Length; i++)
-				controlGroups[i].RemoveAll(a => actors.Contains(a));
+				controlGroups[i].RemoveAll(actorSet.Contains);
 		}
 
 		public IEnumerable<Actor> GetActorsInControlGroup(int group)
