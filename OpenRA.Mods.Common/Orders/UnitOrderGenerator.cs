@@ -159,19 +159,35 @@ namespace OpenRA.Mods.Common.Orders
 			if (mi.Modifiers.HasModifier(Modifiers.Alt))
 				modifiers |= TargetModifiers.ForceMove;
 
-			// PERF: Use pre-cached and pre-sorted IssueOrderTargeters from Actor
-			// This avoids per-click allocations (anonymous objects, list) and sorting
-			var orders = self.IssueOrderTargeters;
+			// PERF: Use pre-cached IIssueOrder traits from Actor.
+			// Query Orders dynamically to respect current enabled state of conditional traits.
+			// Track best match by priority instead of sorting to avoid allocations.
+			var issueOrderTraits = self.IssueOrderTraits;
 
 			for (var i = 0; i < 2; i++)
 			{
-				foreach (var o in orders)
+				UnitOrderResult bestResult = null;
+				var bestPriority = int.MinValue;
+
+				foreach (var trait in issueOrderTraits)
 				{
-					var localModifiers = modifiers;
-					string cursor = null;
-					if (o.Order.CanTarget(self, target, ref localModifiers, ref cursor))
-						return new UnitOrderResult(self, o.Order, o.Trait, cursor, target);
+					foreach (var order in trait.Orders)
+					{
+						if (order.OrderPriority <= bestPriority)
+							continue;
+
+						var localModifiers = modifiers;
+						string cursor = null;
+						if (order.CanTarget(self, target, ref localModifiers, ref cursor))
+						{
+							bestResult = new UnitOrderResult(self, order, trait, cursor, target);
+							bestPriority = order.OrderPriority;
+						}
+					}
 				}
+
+				if (bestResult != null)
+					return bestResult;
 
 				// No valid orders, so check for orders against the cell
 				target = Target.FromCell(self.World, xy);

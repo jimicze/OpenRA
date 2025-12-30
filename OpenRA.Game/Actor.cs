@@ -123,12 +123,19 @@ namespace OpenRA
 		readonly IEnumerable<WPos> enabledTargetableWorldPositions;
 
 		/// <summary>
-		/// PERF: Cached IIssueOrder traits with their order targeters, pre-sorted by OrderPriority descending.
-		/// This avoids per-click allocations and sorting in UnitOrderGenerator.OrderForUnit().
-		/// Initialized in Initialize() after all traits have been Created().
+		/// PERF: Cached IIssueOrder traits for use in UnitOrderGenerator.OrderForUnit().
+		/// This avoids per-click TraitsImplementing calls. The Orders property is queried
+		/// dynamically to respect current enabled state of conditional traits.
 		/// </summary>
-		(IIssueOrder Trait, IOrderTargeter Order)[] issueOrderTargeters;
-		public (IIssueOrder Trait, IOrderTargeter Order)[] IssueOrderTargeters => issueOrderTargeters;
+		IIssueOrder[] issueOrderTraits;
+		public IIssueOrder[] IssueOrderTraits => issueOrderTraits;
+
+		/// <summary>
+		/// PERF: Maximum number of order targeters across all IIssueOrder traits.
+		/// Used for pre-allocating a buffer in UnitOrderGenerator.
+		/// </summary>
+		int maxOrderTargetersCount;
+		public int MaxOrderTargetersCount => maxOrderTargetersCount;
 
 		bool created;
 
@@ -223,18 +230,24 @@ namespace OpenRA
 			foreach (var t in TraitsImplementing<INotifyCreated>())
 				t.Created(this);
 
-			// PERF: Cache IIssueOrder traits with their order targeters, pre-sorted by OrderPriority descending.
-			// This must happen after Created() is called on all traits, as some traits (e.g., AttackBase)
-			// initialize their Orders property in Created(). This eliminates per-click allocations and
-			// sorting in UnitOrderGenerator.OrderForUnit().
-			var issueOrderTargetersList = new List<(IIssueOrder Trait, IOrderTargeter Order)>();
+			// PERF: Cache IIssueOrder traits for use in UnitOrderGenerator.OrderForUnit().
+			// We only cache the traits themselves, not the order targeters, because some traits
+			// (like AttackBase) return different Orders based on their current enabled state.
+			// The Orders property is queried dynamically at runtime to respect conditions.
+			var issueOrderTraitsList = new List<IIssueOrder>();
+			var maxTargeters = 0;
 			foreach (var issueOrder in TraitsImplementing<IIssueOrder>())
-				foreach (var order in issueOrder.Orders)
-					issueOrderTargetersList.Add((issueOrder, order));
+			{
+				issueOrderTraitsList.Add(issueOrder);
+				// Count current orders to estimate buffer size (may change at runtime, but gives a reasonable starting point)
+				var count = 0;
+				foreach (var _ in issueOrder.Orders)
+					count++;
+				maxTargeters += count;
+			}
 
-			// Sort by priority descending (highest priority first)
-			issueOrderTargetersList.Sort((a, b) => b.Order.OrderPriority.CompareTo(a.Order.OrderPriority));
-			issueOrderTargeters = issueOrderTargetersList.ToArray();
+			issueOrderTraits = issueOrderTraitsList.ToArray();
+			maxOrderTargetersCount = maxTargeters > 0 ? maxTargeters : 8; // Default to 8 if no orders found at init time
 
 			var allObserverNotifiers = new HashSet<VariableObserverNotifier>();
 			foreach (var provider in TraitsImplementing<IObservesVariables>())
