@@ -239,6 +239,7 @@ namespace OpenRA
 			foreach (var issueOrder in TraitsImplementing<IIssueOrder>())
 			{
 				issueOrderTraitsList.Add(issueOrder);
+
 				// Count current orders to estimate buffer size (may change at runtime, but gives a reasonable starting point)
 				var count = 0;
 				foreach (var _ in issueOrder.Orders)
