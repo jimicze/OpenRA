@@ -281,9 +281,18 @@ namespace OpenRA.Mods.Common.Activities
 					// If there is a free cell next to the blocker that is a similar or closer distance to the
 					// destination then we can probably nudge or path around it.
 					var blockerDistSq = (nextCell - destination.Value).LengthSquared;
-					var nudgeOrRepath = CVec.Directions
-						.Select(d => nextCell + d)
-						.Any(c => c != self.Location && (c - destination.Value).LengthSquared <= blockerDistSq && mobile.CanEnterCell(c, ignoreActor));
+
+					// PERF: Replace LINQ Select().Any() with manual loop for early exit
+					var nudgeOrRepath = false;
+					foreach (var d in CVec.Directions)
+					{
+						var c = nextCell + d;
+						if (c != self.Location && (c - destination.Value).LengthSquared <= blockerDistSq && mobile.CanEnterCell(c, ignoreActor))
+						{
+							nudgeOrRepath = true;
+							break;
+						}
+					}
 
 					if (!nudgeOrRepath)
 					{
