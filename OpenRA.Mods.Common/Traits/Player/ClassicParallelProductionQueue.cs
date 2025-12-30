@@ -139,15 +139,45 @@ namespace OpenRA.Mods.Common.Traits
 
 		public override TraitPair<Production> MostLikelyProducer()
 		{
-			var productionActor = self.World.ActorsWithTrait<Production>()
-				.Where(x => x.Actor.Owner == self.Owner
-					&& !x.Trait.IsTraitDisabled && x.Trait.Info.Produces.Contains(Info.Type))
-				.OrderBy(x => x.Trait.IsTraitPaused)
-				.ThenByDescending(x => x.Actor.IsPrimaryBuilding())
-				.ThenByDescending(x => x.Actor.ActorID)
-				.FirstOrDefault();
+			// PERF: Avoid LINQ - single-pass iteration to find best producer
+			// Priority: not paused > paused, primary > non-primary, higher ActorID > lower
+			TraitPair<Production> best = default;
+			var bestIsPaused = true;
+			var bestIsPrimary = false;
+			var bestActorId = 0u;
+			var found = false;
 
-			return productionActor;
+			foreach (var x in self.World.ActorsWithTrait<Production>())
+			{
+				if (x.Actor.Owner != self.Owner || x.Trait.IsTraitDisabled || !x.Trait.Info.Produces.Contains(Info.Type))
+					continue;
+
+				var isPaused = x.Trait.IsTraitPaused;
+				var isPrimary = x.Actor.IsPrimaryBuilding();
+				var actorId = x.Actor.ActorID;
+
+				// Compare: prefer not paused, then primary, then higher actor ID
+				var isBetter = false;
+				if (!found)
+					isBetter = true;
+				else if (isPaused != bestIsPaused)
+					isBetter = !isPaused; // Not paused is better
+				else if (isPrimary != bestIsPrimary)
+					isBetter = isPrimary; // Primary is better
+				else if (actorId > bestActorId)
+					isBetter = true; // Higher actor ID is better
+
+				if (isBetter)
+				{
+					best = x;
+					bestIsPaused = isPaused;
+					bestIsPrimary = isPrimary;
+					bestActorId = actorId;
+					found = true;
+				}
+			}
+
+			return best;
 		}
 
 		protected override bool BuildUnit(ActorInfo unit)
@@ -158,28 +188,56 @@ namespace OpenRA.Mods.Common.Traits
 			// Some units may request a specific production type, which is ignored if the AllTech cheat is enabled
 			var type = developerMode.AllTech ? Info.Type : (bi.BuildAtProductionType ?? Info.Type);
 
-			var producers = self.World.ActorsWithTrait<Production>()
-				.Where(x => x.Actor.Owner == self.Owner
-					&& !x.Trait.IsTraitDisabled
-					&& x.Trait.Info.Produces.Contains(type))
-				.OrderByDescending(x => x.Actor.IsPrimaryBuilding())
-				.ThenByDescending(x => x.Actor.ActorID);
-
+			// PERF: Avoid LINQ - collect valid producers and sort by priority
+			// We need to try producers in order: primary first, then by descending actor ID
+			// But we also skip paused producers, so we iterate all and try non-paused ones
+			TraitPair<Production> bestProducer = default;
+			var bestIsPrimary = false;
+			var bestActorId = 0u;
 			var anyProducers = false;
-			foreach (var p in producers)
+
+			foreach (var x in self.World.ActorsWithTrait<Production>())
 			{
-				anyProducers = true;
-				if (p.Trait.IsTraitPaused)
+				if (x.Actor.Owner != self.Owner || x.Trait.IsTraitDisabled || !x.Trait.Info.Produces.Contains(type))
 					continue;
 
+				anyProducers = true;
+
+				// Skip paused producers for now - we want to try active ones first
+				if (x.Trait.IsTraitPaused)
+					continue;
+
+				var isPrimary = x.Actor.IsPrimaryBuilding();
+				var actorId = x.Actor.ActorID;
+
+				// Find best non-paused producer: primary first, then highest actor ID
+				var isBetter = false;
+				if (bestProducer.Actor == null)
+					isBetter = true;
+				else if (isPrimary != bestIsPrimary)
+					isBetter = isPrimary;
+				else if (actorId > bestActorId)
+					isBetter = true;
+
+				if (isBetter)
+				{
+					bestProducer = x;
+					bestIsPrimary = isPrimary;
+					bestActorId = actorId;
+				}
+			}
+
+			// Try to produce with the best non-paused producer
+			if (bestProducer.Actor != null)
+			{
 				var inits = new TypeDictionary
 				{
 					new OwnerInit(self.Owner),
-					new FactionInit(BuildableInfo.GetInitialFaction(unit, p.Trait.Faction))
+					new FactionInit(BuildableInfo.GetInitialFaction(unit, bestProducer.Trait.Faction))
 				};
 
 				var item = Queue.First(i => i.Done && i.Item == unit.Name);
-				if (p.Trait.Produce(p.Actor, unit, type, inits, item.TotalCost))
+				if (bestProducer.Trait.Produce(bestProducer.Actor, unit, type, inits, item.TotalCost))
 				{
 					EndProduction(item);
 					return true;
@@ -215,8 +273,14 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				var type = bi.BuildAtProductionType ?? info.Type;
 
-				var selfsameProductionsCount = self.World.ActorsWithTrait<Production>()
-					.Count(p => !p.Trait.IsTraitDisabled && !p.Trait.IsTraitPaused && p.Actor.Owner == self.Owner && p.Trait.Info.Produces.Contains(type));
+				// PERF: Avoid LINQ Count() - manual iteration
+				var selfsameProductionsCount = 0;
+				foreach (var p in self.World.ActorsWithTrait<Production>())
+				{
+					if (!p.Trait.IsTraitDisabled && !p.Trait.IsTraitPaused &&
+						p.Actor.Owner == self.Owner && p.Trait.Info.Produces.Contains(type))
+						selfsameProductionsCount++;
+				}
 
 				var speedModifier = selfsameProductionsCount.Clamp(1, info.BuildingCountBuildTimeMultipliers.Length) - 1;
 				time = time * info.BuildingCountBuildTimeMultipliers[speedModifier] / 100;
