@@ -42,23 +42,42 @@ namespace OpenRA.Mods.Common.Orders
 			return Target.FromCell(world, cell);
 		}
 
+		// PERF: Reusable collections to avoid per-click allocations.
+		// These are only accessed from the main game thread, so no synchronization needed.
+		static readonly List<UnitOrderResult> OrdersBuffer = new(64);
+		static readonly HashSet<Actor> ActorsInvolvedSet = new(64);
+		static readonly List<Actor> ActorsInvolvedBuffer = new(64);
+
 		public virtual IEnumerable<Order> Order(World world, CPos cell, int2 worldPixel, MouseInput mi)
 		{
 			var target = TargetForInput(world, cell, worldPixel, mi);
-			var orders = world.Selection.Actors
-				.Select(a => OrderForUnit(a, target, cell, mi))
-				.Where(o => o != null)
-				.ToList();
 
-			var actorsInvolved = orders.Select(o => o.Actor).Distinct().ToArray();
-			if (actorsInvolved.Length == 0)
+			// PERF: Use static buffers instead of LINQ .Select().Where().ToList()
+			OrdersBuffer.Clear();
+			foreach (var a in world.Selection.Actors)
+			{
+				var order = OrderForUnit(a, target, cell, mi);
+				if (order != null)
+					OrdersBuffer.Add(order);
+			}
+
+			if (OrdersBuffer.Count == 0)
 				yield break;
+
+			// PERF: Use HashSet for distinct check instead of LINQ .Select().Distinct().ToArray()
+			ActorsInvolvedSet.Clear();
+			ActorsInvolvedBuffer.Clear();
+			foreach (var o in OrdersBuffer)
+			{
+				if (ActorsInvolvedSet.Add(o.Actor))
+					ActorsInvolvedBuffer.Add(o.Actor);
+			}
 
 			// HACK: This is required by the hacky player actions-per-minute calculation
 			// TODO: Reimplement APM properly and then remove this
-			yield return new Order("CreateGroup", actorsInvolved[0].Owner.PlayerActor, false, actorsInvolved);
+			yield return new Order("CreateGroup", ActorsInvolvedBuffer[0].Owner.PlayerActor, false, ActorsInvolvedBuffer.ToArray());
 
-			foreach (var o in orders)
+			foreach (var o in OrdersBuffer)
 				yield return CheckSameOrder(o.Order, o.Trait.IssueOrder(o.Actor, o.Order, o.Target, mi.Modifiers.HasModifier(Modifiers.Shift)));
 		}
 
@@ -76,13 +95,21 @@ namespace OpenRA.Mods.Common.Orders
 				useSelect = target.Type == TargetType.Actor && target.Actor.Info.HasTraitInfo<ISelectableInfo>();
 			else
 			{
-				var ordersWithCursor = world.Selection.Actors
-					.Select(a => OrderForUnit(a, target, cell, mi))
-					.Where(o => o != null && o.Cursor != null);
+				// PERF: Replace LINQ .Select().Where().MaxByOrDefault() with manual iteration
+				UnitOrderResult bestCursorOrder = null;
+				var bestPriority = int.MinValue;
+				foreach (var a in world.Selection.Actors)
+				{
+					var order = OrderForUnit(a, target, cell, mi);
+					if (order != null && order.Cursor != null && order.Order.OrderPriority > bestPriority)
+					{
+						bestCursorOrder = order;
+						bestPriority = order.Order.OrderPriority;
+					}
+				}
 
-				var cursorOrder = ordersWithCursor.MaxByOrDefault(o => o.Order.OrderPriority);
-				if (cursorOrder != null)
-					return cursorOrder.Cursor;
+				if (bestCursorOrder != null)
+					return bestCursorOrder.Cursor;
 
 				useSelect = target.Type == TargetType.Actor && target.Actor.Info.HasTraitInfo<ISelectableInfo>() &&
 					(mi.Modifiers.HasModifier(Modifiers.Shift) || world.Selection.Actors.Count == 0);
