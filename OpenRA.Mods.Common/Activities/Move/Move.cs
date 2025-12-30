@@ -121,7 +121,12 @@ namespace OpenRA.Mods.Common.Activities
 		(bool AlreadyAtDestination, List<CPos> Path) EvalPath(BlockedByActor check)
 		{
 			var (alreadyAtDestination, path) = getPath(check);
-			path = path.TakeWhile(a => a != mobile.ToCell).ToList();
+
+			// PERF: Remove cells at/after ToCell in-place instead of TakeWhile().ToList()
+			var toCellIndex = path.IndexOf(mobile.ToCell);
+			if (toCellIndex >= 0)
+				path.RemoveRange(toCellIndex, path.Count - toCellIndex);
+
 			return (alreadyAtDestination, path);
 		}
 
