@@ -125,8 +125,9 @@ namespace OpenRA
 		/// <summary>
 		/// PERF: Cached IIssueOrder traits with their order targeters, pre-sorted by OrderPriority descending.
 		/// This avoids per-click allocations and sorting in UnitOrderGenerator.OrderForUnit().
+		/// Initialized in Initialize() after all traits have been Created().
 		/// </summary>
-		readonly (IIssueOrder Trait, IOrderTargeter Order)[] issueOrderTargeters;
+		(IIssueOrder Trait, IOrderTargeter Order)[] issueOrderTargeters;
 		public (IIssueOrder Trait, IOrderTargeter Order)[] IssueOrderTargeters => issueOrderTargeters;
 
 		bool created;
@@ -169,7 +170,6 @@ namespace OpenRA
 				var targetablePositionsList = new List<ITargetablePositions>();
 				var syncHashesList = new List<SyncHash>();
 				var crushablesList = new List<ICrushable>();
-				var issueOrdersList = new List<IIssueOrder>();
 
 				foreach (var traitInfo in Info.TraitsInConstructOrder())
 				{
@@ -197,7 +197,6 @@ namespace OpenRA
 					{ if (trait is ITargetablePositions t) targetablePositionsList.Add(t); }
 					{ if (trait is ISync t) syncHashesList.Add(new SyncHash(t)); }
 					{ if (trait is ICrushable t) crushablesList.Add(t); }
-					{ if (trait is IIssueOrder t) issueOrdersList.Add(t); }
 				}
 
 				resolveOrders = resolveOrdersList.ToArray();
@@ -213,17 +212,6 @@ namespace OpenRA
 				enabledTargetableWorldPositions = EnabledTargetablePositions.SelectMany(tp => tp.TargetablePositions(this));
 				SyncHashes = syncHashesList.ToArray();
 				crushables = crushablesList.ToArray();
-
-				// PERF: Flatten all IIssueOrder traits with their orders, pre-sorted by OrderPriority descending.
-				// This eliminates per-click allocations and sorting in UnitOrderGenerator.OrderForUnit().
-				var issueOrderTargetersList = new List<(IIssueOrder Trait, IOrderTargeter Order)>();
-				foreach (var issueOrder in issueOrdersList)
-					foreach (var order in issueOrder.Orders)
-						issueOrderTargetersList.Add((issueOrder, order));
-
-				// Sort by priority descending (highest priority first)
-				issueOrderTargetersList.Sort((a, b) => b.Order.OrderPriority.CompareTo(a.Order.OrderPriority));
-				issueOrderTargeters = issueOrderTargetersList.ToArray();
 			}
 		}
 
@@ -234,6 +222,19 @@ namespace OpenRA
 			// Make sure traits are usable for condition notifiers
 			foreach (var t in TraitsImplementing<INotifyCreated>())
 				t.Created(this);
+
+			// PERF: Cache IIssueOrder traits with their order targeters, pre-sorted by OrderPriority descending.
+			// This must happen after Created() is called on all traits, as some traits (e.g., AttackBase)
+			// initialize their Orders property in Created(). This eliminates per-click allocations and
+			// sorting in UnitOrderGenerator.OrderForUnit().
+			var issueOrderTargetersList = new List<(IIssueOrder Trait, IOrderTargeter Order)>();
+			foreach (var issueOrder in TraitsImplementing<IIssueOrder>())
+				foreach (var order in issueOrder.Orders)
+					issueOrderTargetersList.Add((issueOrder, order));
+
+			// Sort by priority descending (highest priority first)
+			issueOrderTargetersList.Sort((a, b) => b.Order.OrderPriority.CompareTo(a.Order.OrderPriority));
+			issueOrderTargeters = issueOrderTargetersList.ToArray();
 
 			var allObserverNotifiers = new HashSet<VariableObserverNotifier>();
 			foreach (var provider in TraitsImplementing<IObservesVariables>())
