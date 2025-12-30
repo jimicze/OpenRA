@@ -171,6 +171,10 @@ namespace OpenRA.Mods.Common.Traits
 		[Sync]
 		public bool IsValidFaction { get; private set; }
 
+		// Per-tick cache for owned buildable actor counts to avoid repeated world scans
+		Dictionary<string, int> ownedBuildableCountsCache;
+		int ownedBuildableCountsCacheTick = -1;
+
 		public ProductionQueue(ActorInitializer init, ProductionQueueInfo info)
 		{
 			Actor = init.Self;
@@ -195,6 +199,29 @@ namespace OpenRA.Mods.Common.Traits
 			productionTraits = self.TraitsImplementing<Production>().Where(p => p.Info.Produces.Contains(Info.Type)).ToArray();
 			conditionPrerequisites = self.Info.TraitInfos<ConditionPrerequisiteInfo>().ToArray();
 			CacheProducibles();
+		}
+
+		int GetOwnedBuildableCount(string actorName)
+		{
+			var currentTick = Actor.World.WorldTick;
+			if (ownedBuildableCountsCacheTick != currentTick)
+			{
+				// Rebuild cache once per tick by scanning all buildable actors once
+				ownedBuildableCountsCache = [];
+				foreach (var actor in Actor.Owner.World.ActorsHavingTrait<Buildable>())
+				{
+					if (actor.Owner != Actor.Owner)
+						continue;
+
+					var name = actor.Info.Name;
+					ownedBuildableCountsCache.TryGetValue(name, out var count);
+					ownedBuildableCountsCache[name] = count + 1;
+				}
+
+				ownedBuildableCountsCacheTick = currentTick;
+			}
+
+			return ownedBuildableCountsCache.TryGetValue(actorName, out var result) ? result : 0;
 		}
 
 		protected void ClearQueue()
@@ -460,8 +487,7 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (bi.BuildLimit > 0)
 				{
-					var owned = Actor.Owner.World.ActorsHavingTrait<Buildable>()
-						.Count(a => a.Info.Name == actor.Name && a.Owner == Actor.Owner);
+					var owned = GetOwnedBuildableCount(actor.Name);
 					if (queueCount + owned >= bi.BuildLimit)
 						return false;
 				}
@@ -484,8 +510,8 @@ namespace OpenRA.Mods.Common.Traits
 					var unit = rules.Actors[order.TargetString];
 					var bi = BuildableInfo.GetTraitForQueue(unit, Info.Type);
 
-					// You can't build that
-					if (BuildableItems().All(b => b.Name != order.TargetString))
+					// You can't build that - use !Any for early exit instead of All
+					if (!BuildableItems().Any(b => b.Name == order.TargetString))
 						return;
 
 					// Check if the player is trying to build more units that they are allowed
@@ -501,7 +527,7 @@ namespace OpenRA.Mods.Common.Traits
 						if (bi.BuildLimit > 0)
 						{
 							var inQueue = Queue.Count(pi => pi.Item == order.TargetString);
-							var owned = self.Owner.World.ActorsHavingTrait<Buildable>().Count(a => a.Info.Name == order.TargetString && a.Owner == self.Owner);
+							var owned = GetOwnedBuildableCount(order.TargetString);
 							fromLimit = Math.Min(fromLimit, bi.BuildLimit - (inQueue + owned));
 						}
 

@@ -36,6 +36,7 @@ namespace OpenRA.Mods.Common.Widgets
 		public float2 Pos;
 		public List<ProductionItem> Queued;
 		public ProductionQueue ProductionQueue;
+		public IProductionIconOverlay[] ActiveOverlays;
 	}
 
 	public class ProductionPaletteWidget : Widget
@@ -129,6 +130,10 @@ namespace OpenRA.Mods.Common.Widgets
 
 		Player cachedQueueOwner;
 		IProductionIconOverlay[] pios;
+
+		// Per-tick cache for AllBuildables to avoid re-sorting on every access
+		ActorInfo[] cachedBuildables;
+		int cachedBuildablesTick = -1;
 
 		[CustomLintableHotkeyNames]
 		public static IEnumerable<string> LinterHotkeyNames(MiniYamlNode widgetNode, Action<string> emitError)
@@ -225,7 +230,16 @@ namespace OpenRA.Mods.Common.Widgets
 				if (CurrentQueue == null)
 					return [];
 
-				return CurrentQueue.AllItems().OrderBy(a => BuildableInfo.GetTraitForQueue(a, CurrentQueue.Info.Type).GetBuildPaletteOrder(a, CurrentQueue));
+				var currentTick = World.WorldTick;
+				if (cachedBuildablesTick != currentTick)
+				{
+					cachedBuildables = CurrentQueue.AllItems()
+						.OrderBy(a => BuildableInfo.GetTraitForQueue(a, CurrentQueue.Info.Type).GetBuildPaletteOrder(a, CurrentQueue))
+						.ToArray();
+					cachedBuildablesTick = currentTick;
+				}
+
+				return cachedBuildables;
 			}
 		}
 
@@ -269,10 +283,20 @@ namespace OpenRA.Mods.Common.Widgets
 				tooltipContainer.Value.RemoveTooltip();
 		}
 
+		ProductionIcon FindIconAt(int2 location)
+		{
+			foreach (var kvp in icons)
+			{
+				if (kvp.Key.Contains(location))
+					return kvp.Value;
+			}
+
+			return null;
+		}
+
 		public override bool HandleMouseInput(MouseInput mi)
 		{
-			var icon = icons.Where(i => i.Key.Contains(mi.Location))
-				.Select(i => i.Value).FirstOrDefault();
+			var icon = FindIconAt(mi.Location);
 
 			if (mi.Event == MouseInputEvent.Move)
 				TooltipIcon = icon;
@@ -483,6 +507,29 @@ namespace OpenRA.Mods.Common.Widgets
 			pios = cachedQueueOwner.World.ActorsWithTrait<IProductionIconOverlay>().Where(a => a.Actor.Owner == cachedQueueOwner).Select(a => a.Trait).ToArray();
 		}
 
+		IProductionIconOverlay[] GetActiveOverlays(ActorInfo actor, Actor queueActor)
+		{
+			var count = 0;
+			foreach (var pio in pios)
+			{
+				if (pio.IsOverlayActive(actor, queueActor))
+					count++;
+			}
+
+			if (count == 0)
+				return [];
+
+			var result = new IProductionIconOverlay[count];
+			var index = 0;
+			foreach (var pio in pios)
+			{
+				if (pio.IsOverlayActive(actor, queueActor))
+					result[index++] = pio;
+			}
+
+			return result;
+		}
+
 		public void RefreshIcons()
 		{
 			icons = [];
@@ -503,6 +550,19 @@ namespace OpenRA.Mods.Common.Widgets
 
 			var rb = RenderBounds;
 			var faction = producer.Trait.Faction;
+
+			// Pre-compute queued items by name to avoid per-icon LINQ allocations
+			var queuedByItem = new Dictionary<string, List<ProductionItem>>();
+			foreach (var queued in currentQueue.AllQueued())
+			{
+				if (!queuedByItem.TryGetValue(queued.Item, out var list))
+				{
+					list = [];
+					queuedByItem[queued.Item] = list;
+				}
+
+				list.Add(queued);
+			}
 
 			foreach (var item in AllBuildables.Skip(IconRowOffset * Columns).Take(MaxIconRowOffset * Columns))
 			{
@@ -529,12 +589,12 @@ namespace OpenRA.Mods.Common.Widgets
 					IconClockPalette = worldRenderer.Palette(ClockPalette),
 					IconDarkenPalette = worldRenderer.Palette(NotBuildablePalette),
 					Pos = new float2(rect.Location),
-					Queued = currentQueue.AllQueued().Where(a => a.Item == item.Name).ToList(),
-					ProductionQueue = currentQueue
+					Queued = queuedByItem.TryGetValue(item.Name, out var queued) ? queued : [],
+					ProductionQueue = currentQueue,
+					ActiveOverlays = GetActiveOverlays(item, currentQueue.Actor)
 				};
 
-				if (!icons.ContainsKey(rect))
-					icons.Add(rect, pi);
+				icons.TryAdd(rect, pi);
 
 				if (iconLocation > DisplayedIconCount)
 					DisplayedIconCount = iconLocation + 1;
@@ -563,8 +623,8 @@ namespace OpenRA.Mods.Common.Widgets
 			{
 				WidgetUtils.DrawSpriteCentered(icon.Sprite, icon.Palette, icon.Pos + iconOffset);
 
-				// Draw the ProductionIconOverlay's sprites
-				foreach (var pio in pios.Where(p => p.IsOverlayActive(icon.Actor, icon.ProductionQueue.Actor)))
+				// Draw the ProductionIconOverlay's sprites (pre-computed in RefreshIcons)
+				foreach (var pio in icon.ActiveOverlays)
 					WidgetUtils.DrawSpriteCentered(pio.Sprite, worldRenderer.Palette(pio.Palette), icon.Pos + iconOffset + pio.Offset(IconSize));
 
 				// Build progress
@@ -634,9 +694,7 @@ namespace OpenRA.Mods.Common.Widgets
 
 		public override string GetCursor(int2 pos)
 		{
-			var icon = icons.Where(i => i.Key.Contains(pos))
-				.Select(i => i.Value).FirstOrDefault();
-
+			var icon = FindIconAt(pos);
 			return icon != null ? base.GetCursor(pos) : null;
 		}
 	}
