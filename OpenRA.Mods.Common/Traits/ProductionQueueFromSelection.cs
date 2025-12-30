@@ -10,7 +10,7 @@
 #endregion
 
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using OpenRA.Mods.Common.Widgets;
 using OpenRA.Traits;
 using OpenRA.Widgets;
@@ -46,21 +46,58 @@ namespace OpenRA.Mods.Common.Traits
 			if (world.LocalPlayer == null)
 				return;
 
-			// Queue-per-actor
-			var queue = world.Selection.Actors
-				.Where(a => a.IsInWorld && a.World.LocalPlayer == a.Owner)
-				.SelectMany(a => a.TraitsImplementing<ProductionQueue>())
-				.FirstOrDefault(q => q.Enabled);
+			// PERF: Manual iteration with early exit instead of LINQ chains
+			ProductionQueue queue = null;
 
-			// Queue-per-player
+			// Queue-per-actor: find first enabled ProductionQueue on selected actors
+			foreach (var a in world.Selection.Actors)
+			{
+				if (!a.IsInWorld || a.Owner != world.LocalPlayer)
+					continue;
+
+				foreach (var q in a.TraitsImplementing<ProductionQueue>())
+				{
+					if (q.Enabled)
+					{
+						queue = q;
+						break;
+					}
+				}
+
+				if (queue != null)
+					break;
+			}
+
+			// Queue-per-player: collect production types and find matching queue
 			if (queue == null)
 			{
-				var types = world.Selection.Actors.Where(a => a.IsInWorld && a.World.LocalPlayer == a.Owner)
-					.SelectMany(a => a.TraitsImplementing<Production>().Where(p => !p.IsTraitDisabled))
-					.SelectMany(t => t.Info.Produces);
+				var types = new HashSet<string>();
+				foreach (var a in world.Selection.Actors)
+				{
+					if (!a.IsInWorld || a.Owner != world.LocalPlayer)
+						continue;
 
-				queue = world.LocalPlayer.PlayerActor.TraitsImplementing<ProductionQueue>()
-					.FirstOrDefault(q => q.Enabled && types.Contains(q.Info.Type));
+					foreach (var p in a.TraitsImplementing<Production>())
+					{
+						if (!p.IsTraitDisabled)
+						{
+							foreach (var type in p.Info.Produces)
+								types.Add(type);
+						}
+					}
+				}
+
+				if (types.Count > 0)
+				{
+					foreach (var q in world.LocalPlayer.PlayerActor.TraitsImplementing<ProductionQueue>())
+					{
+						if (q.Enabled && types.Contains(q.Info.Type))
+						{
+							queue = q;
+							break;
+						}
+					}
+				}
 			}
 
 			if (queue == null || (!queue.AnyItemsToBuild() && !queue.AlwaysVisible))
