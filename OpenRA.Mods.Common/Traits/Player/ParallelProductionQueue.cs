@@ -9,7 +9,7 @@
  */
 #endregion
 
-using System.Linq;
+using System.Collections.Generic;
 
 namespace OpenRA.Mods.Common.Traits
 {
@@ -27,7 +27,17 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			CancelUnbuildableItems();
 
-			var item = Queue.FirstOrDefault(i => !i.Paused);
+			// PERF: Manual loop instead of Queue.FirstOrDefault(i => !i.Paused)
+			ProductionItem item = null;
+			foreach (var i in Queue)
+			{
+				if (!i.Paused)
+				{
+					item = i;
+					break;
+				}
+			}
+
 			if (item == null || allProductionPaused)
 				return;
 
@@ -37,8 +47,17 @@ namespace OpenRA.Mods.Common.Traits
 			if (item.RemainingTime == before)
 				return;
 
+			// PERF: Collect matching items first, then modify queue
+			// (can't modify during enumeration)
+			var itemsToMove = new List<ProductionItem>();
+			foreach (var other in Queue)
+			{
+				if (other.Item == item.Item)
+					itemsToMove.Add(other);
+			}
+
 			// As we have progressed this actor type, we will move all queued items of this actor to the end.
-			foreach (var other in Queue.FindAll(a => a.Item == item.Item))
+			foreach (var other in itemsToMove)
 			{
 				Queue.Remove(other);
 				Queue.Add(other);
@@ -58,17 +77,25 @@ namespace OpenRA.Mods.Common.Traits
 
 		protected override void PauseProduction(string itemName, bool paused)
 		{
-			foreach (var item in Queue.Where(a => a.Item == itemName))
-				item.Pause(paused);
+			// PERF: Manual loop instead of Queue.Where()
+			foreach (var item in Queue)
+			{
+				if (item.Item == itemName)
+					item.Pause(paused);
+			}
 		}
 
 		public override int RemainingTimeActual(ProductionItem item)
 		{
-			var parallelBuilds = Queue.FindAll(i => !i.Paused && !i.Done)
-				.GroupBy(i => i.Item)
-				.ToList()
-				.Count;
-			return item.RemainingTimeActual * parallelBuilds;
+			// PERF: Use HashSet to count distinct items instead of GroupBy().ToList().Count
+			var distinctItems = new HashSet<string>();
+			foreach (var i in Queue)
+			{
+				if (!i.Paused && !i.Done)
+					distinctItems.Add(i.Item);
+			}
+
+			return item.RemainingTimeActual * distinctItems.Count;
 		}
 	}
 }
