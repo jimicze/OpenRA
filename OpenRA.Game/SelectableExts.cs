@@ -11,7 +11,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using OpenRA.Primitives;
 
 namespace OpenRA.Traits
@@ -91,11 +90,30 @@ namespace OpenRA.Traits
 
 		public static IEnumerable<Actor> SubsetWithHighestSelectionPriority(this IEnumerable<Actor> actors, Modifiers modifiers)
 		{
-			return actors.GroupBy(x => x.SelectionPriority(modifiers))
-				.OrderByDescending(g => g.Key)
-				.Select(g => g.AsEnumerable())
-				.DefaultIfEmpty(NoActors)
-				.FirstOrDefault();
+			// PERF: Single pass to find max priority with cached priorities to avoid double lookup
+			var actorPriorities = new List<(Actor Actor, int Priority)>();
+			var maxPriority = int.MinValue;
+
+			foreach (var actor in actors)
+			{
+				var priority = actor.SelectionPriority(modifiers);
+				actorPriorities.Add((actor, priority));
+				if (priority > maxPriority)
+					maxPriority = priority;
+			}
+
+			if (actorPriorities.Count == 0)
+				return NoActors;
+
+			// Second pass: collect actors with max priority using cached values
+			var result = new List<Actor>();
+			foreach (var (actor, priority) in actorPriorities)
+			{
+				if (priority == maxPriority)
+					result.Add(actor);
+			}
+
+			return result;
 		}
 	}
 }
