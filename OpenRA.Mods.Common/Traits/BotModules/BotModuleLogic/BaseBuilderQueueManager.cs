@@ -410,6 +410,17 @@ namespace OpenRA.Mods.Common.Traits
 
 				var cells = world.Map.FindTilesInAnnulus(center, minRange, maxRange);
 
+				// Filter cells based on building's terrain placement capabilities.
+				// If building can be placed on water (has water in SecondaryTerrainTypes),
+				// search all cells (land or water). Otherwise, only search cells matching
+				// the building's primary TerrainTypes.
+				var canPlaceOnWater = bi.SecondaryTerrainTypes.Overlaps(baseBuilder.Info.WaterTerrainTypes);
+				if (!canPlaceOnWater)
+				{
+					cells = cells.Where(c => bi.TerrainTypes.Contains(world.Map.GetTerrainInfo(c).Type));
+					AIUtils.BotDebug("{0}: Building {1} cannot be placed on water, filtering to land cells only", player, actorType);
+				}
+
 				// Sort by distance to target if we have one
 				if (center != target)
 				{
