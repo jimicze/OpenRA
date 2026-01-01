@@ -395,6 +395,10 @@ namespace OpenRA.Mods.Cnc.Traits
 			if (doRender.Count == 0)
 				return;
 
+			// DIAGNOSTIC: Track render execution count
+			var renderCount = 0;
+			var emptyRenderCount = 0;
+
 			Sheet currentSheet = null;
 			IFrameBuffer fbo = null;
 			foreach (var v in doRender)
@@ -410,6 +414,15 @@ namespace OpenRA.Mods.Cnc.Traits
 				}
 
 				v.Func();
+				renderCount++;
+			}
+
+			// DIAGNOSTIC: Log render stats for this frame if significant
+			if (renderCount > 0 && (emptyModelCountThisFrame > 0 || invalidBoundsCountThisFrame > 0))
+			{
+				Log.Write("debug",
+					$"[VOXEL-ENDFRAME] Frame {frameNumber}: Rendered {renderCount} voxels to {mappedBuffers.Count} sheets. " +
+					$"Empty models: {emptyModelCountThisFrame}, Invalid bounds: {invalidBoundsCountThisFrame}");
 			}
 
 			if (fbo != null)

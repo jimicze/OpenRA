@@ -172,6 +172,20 @@ namespace OpenRA.Mods.Cnc.Graphics
 				if ((model.TintModifiers & TintModifiers.ReplaceColor) != 0)
 					a *= -1;
 
+				// DIAGNOSTIC: Check for invalid sprite bounds before drawing
+				var sprite = renderProxy.Sprite;
+				var spriteSize = sprite.Size;
+				if (spriteSize.X <= 0 || spriteSize.Y <= 0 ||
+				    float.IsNaN(spriteSize.X) || float.IsNaN(spriteSize.Y) ||
+				    float.IsInfinity(spriteSize.X) || float.IsInfinity(spriteSize.Y))
+				{
+					Log.Write("debug",
+						$"[VOXEL-INVALID-SPRITE] Invalid sprite at draw time! " +
+						$"Size=({spriteSize.X:F2},{spriteSize.Y:F2}) " +
+						$"Bounds=({sprite.Bounds.X},{sprite.Bounds.Y},{sprite.Bounds.Width},{sprite.Bounds.Height}) " +
+						$"Pos={model.Pos}");
+				}
+
 				wrsr.DrawSprite(renderProxy.ShadowSprite, sa, sb, sc, sd, t, a);
 				wrsr.DrawSprite(renderProxy.Sprite, pxOrigin - 0.5f * renderProxy.Sprite.Size, 1f, t, a);
 			}
