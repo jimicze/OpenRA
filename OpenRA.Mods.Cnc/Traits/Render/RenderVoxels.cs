@@ -179,15 +179,17 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 		{
 			readonly ModelAnimation model;
 			readonly Actor self;
+			readonly int componentIndex;
 			bool cachedVisible;
 			WVec cachedOffset;
 			int lastVisibilityChangeTick = -1;
 			bool lastVisibilityChangeWasVisible;
 
-			public AnimationWrapper(ModelAnimation model, Actor self)
+			public AnimationWrapper(ModelAnimation model, Actor self, int componentIndex)
 			{
 				this.model = model;
 				this.self = self;
+				this.componentIndex = componentIndex;
 			}
 
 			public bool Tick()
@@ -213,13 +215,21 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 					// Only log if passes both filters
 					if (!isPairedToggle && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
 					{
+						// Check if DisableFunc exists and what it returns
+						var disableFuncResult = model.DisableFunc?.Invoke() ?? false;
+						var componentName = componentIndex == 0 ? "body" : $"part{componentIndex}";
+
 						if (cachedVisible && !visible)
 						{
-							Log.Write("debug", $"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) voxel became INVISIBLE at tick {worldTick}");
+							Log.Write("debug",
+								$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
+								$"became INVISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
 						}
 						else if (!cachedVisible && visible)
 						{
-							Log.Write("debug", $"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) voxel became VISIBLE at tick {worldTick}");
+							Log.Write("debug",
+								$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
+								$"became VISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
 						}
 					}
 
@@ -301,8 +311,9 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 
 		public void Add(ModelAnimation m)
 		{
+			var componentIndex = components.Count;
 			components.Add(m);
-			wrappers.Add(m, new AnimationWrapper(m, self));
+			wrappers.Add(m, new AnimationWrapper(m, self, componentIndex));
 		}
 
 		public void Remove(ModelAnimation m)
