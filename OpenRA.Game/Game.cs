@@ -250,6 +250,10 @@ namespace OpenRA
 			GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
 			GC.Collect();
 
+			// Switch to low-latency GC mode for gameplay to minimize GC pauses
+			// This tells the GC to avoid full blocking collections during gameplay
+			GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
+
 			// PostLoadComplete is designed for anything that should trigger at the very end of loading.
 			// e.g. audio notifications that the game is starting.
 			OrderManager.World.PostLoadComplete(worldRenderer);
@@ -543,6 +547,9 @@ namespace OpenRA
 
 		public static void LoadShellMap()
 		{
+			// Reset GC to interactive mode when leaving gameplay
+			GCSettings.LatencyMode = GCLatencyMode.Interactive;
+
 			var shellmap = ChooseShellmap();
 			using (new PerfTimer("StartGame"))
 			{

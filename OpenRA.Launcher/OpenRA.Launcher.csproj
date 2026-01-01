@@ -1,8 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<AssemblyName>OpenRA</AssemblyName>
 		<IsPublishable Condition="'$(CopyGenericLauncher)' == 'False'">false</IsPublishable>
+		<!-- Use Server GC for lower pause times during gameplay -->
+		<ServerGarbageCollection>true</ServerGarbageCollection>
+		<ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(RunConfiguration)' == 'Red Alert'">
