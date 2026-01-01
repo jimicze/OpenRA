@@ -671,9 +671,18 @@ namespace OpenRA
 			}
 		}
 
+		// Lag detection diagnostics
+		const int LagThresholdMs = 100; // Log if any operation takes longer than 100ms
+		static readonly Stopwatch lagStopwatch = new();
+
 		static void LogicTick()
 		{
+			lagStopwatch.Restart();
+			var startMemory = GC.GetTotalMemory(false);
+			var startGcCount = GC.CollectionCount(0) + GC.CollectionCount(1) + GC.CollectionCount(2);
+
 			PerformDelayedActions();
+			var afterDelayedActions = lagStopwatch.ElapsedMilliseconds;
 
 			if (OrderManager.Connection is NetworkConnection nc && nc.ConnectionState != lastConnectionState)
 			{
@@ -682,8 +691,27 @@ namespace OpenRA
 			}
 
 			InnerLogicTick(OrderManager);
+			var afterOrderManager = lagStopwatch.ElapsedMilliseconds;
+
 			if (worldRenderer != null && OrderManager.World != worldRenderer.World)
 				InnerLogicTick(worldRenderer.World.OrderManager);
+
+			var totalMs = lagStopwatch.ElapsedMilliseconds;
+			var endGcCount = GC.CollectionCount(0) + GC.CollectionCount(1) + GC.CollectionCount(2);
+			var endMemory = GC.GetTotalMemory(false);
+			var gcOccurred = endGcCount > startGcCount;
+
+			if (totalMs > LagThresholdMs || gcOccurred)
+			{
+				var gcInfo = gcOccurred
+					? $" GC! (Gen0={GC.CollectionCount(0)}, Gen1={GC.CollectionCount(1)}, Gen2={GC.CollectionCount(2)})"
+					: "";
+				var memDelta = (endMemory - startMemory) / 1024.0 / 1024.0;
+				Log.Write("debug",
+					$"[LAG-LOGIC] {totalMs}ms (delayed={afterDelayedActions}ms, " +
+					$"orderMgr={afterOrderManager - afterDelayedActions}ms) " +
+					$"Mem={endMemory / 1024.0 / 1024.0:F1}MB (delta={memDelta:+0.0;-0.0}MB){gcInfo}");
+			}
 		}
 
 		public static void PerformDelayedActions()
@@ -698,6 +726,10 @@ namespace OpenRA
 
 		static void RenderTick()
 		{
+			lagStopwatch.Restart();
+			var startGcCount = GC.CollectionCount(0) + GC.CollectionCount(1) + GC.CollectionCount(2);
+			long afterPrepare = 0, afterWorld = 0, afterWidgets = 0, afterFlip = 0;
+
 			using (new PerfSample("render"))
 			{
 				++RenderFrame;
@@ -718,6 +750,8 @@ namespace OpenRA
 					worldRenderer?.EndFrame();
 				}
 
+				afterPrepare = lagStopwatch.ElapsedMilliseconds;
+
 				// worldRenderer is null during the initial install/download screen
 				// World rendering is disabled while the loading screen is displayed
 				// Use worldRenderer.World instead of OrderManager.World to avoid a rendering mismatch while processing orders
@@ -728,6 +762,8 @@ namespace OpenRA
 					using (new PerfSample("render_world"))
 						worldRenderer.Draw();
 				}
+
+				afterWorld = lagStopwatch.ElapsedMilliseconds;
 
 				using (new PerfSample("render_widgets"))
 				{
@@ -750,14 +786,31 @@ namespace OpenRA
 					}
 				}
 
+				afterWidgets = lagStopwatch.ElapsedMilliseconds;
+
 				using (new PerfSample("render_flip"))
 					Renderer.EndFrame(new DefaultInputHandler(OrderManager.World));
+
+				afterFlip = lagStopwatch.ElapsedMilliseconds;
 
 				if (takeScreenshot)
 				{
 					takeScreenshot = false;
 					TakeScreenshotInner();
 				}
+			}
+
+			var totalMs = lagStopwatch.ElapsedMilliseconds;
+			var endGcCount = GC.CollectionCount(0) + GC.CollectionCount(1) + GC.CollectionCount(2);
+			var gcOccurred = endGcCount > startGcCount;
+
+			if (totalMs > LagThresholdMs || gcOccurred)
+			{
+				var gcInfo = gcOccurred ? " GC!" : "";
+				Log.Write("debug",
+					$"[LAG-RENDER] {totalMs}ms (prepare={afterPrepare}ms, " +
+					$"world={afterWorld - afterPrepare}ms, widgets={afterWidgets - afterWorld}ms, " +
+					$"flip={afterFlip - afterWidgets}ms){gcInfo}");
 			}
 
 			PerfHistory.Items["render"].Tick();
