@@ -22,98 +22,6 @@ using OpenRA.Traits;
 
 namespace OpenRA.Mods.Cnc.Traits.Render
 {
-	/// <summary>
-	/// Static helper to detect mass voxel visibility changes (potential bug indicator).
-	/// </summary>
-	public static class VoxelBlinkDetector
-	{
-		// Thresholds for mass blink detection
-		const int MassBlinkThreshold = 20;
-
-		// Per-tick tracking
-		static int currentTick = -1;
-		static int invisibleCountThisTick;
-		static int visibleCountThisTick;
-		static readonly List<string> InvisibleActorsThisTick = new(64);
-
-		// Per-frame tracking
-		static int currentFrame = -1;
-		static int invisibleCountThisFrame;
-		static int visibleCountThisFrame;
-
-		// Actor types known to toggle visibility normally (dock animations, conditional upgrades)
-		static readonly HashSet<string> ExpectedToggleActors = new(StringComparer.OrdinalIgnoreCase)
-		{
-			// Miners with dock/undock animations
-			"cmin", "gmin", "harv", "smin", "slav",
-
-			// Other actors that commonly toggle (add as needed)
-		};
-
-		public static void RecordVisibilityChange(Actor self, bool becameVisible, int worldTick)
-		{
-			// Reset counters on new tick
-			if (worldTick != currentTick)
-			{
-				// Check for mass blink on previous tick before resetting
-				if (currentTick >= 0 && (invisibleCountThisTick >= MassBlinkThreshold || visibleCountThisTick >= MassBlinkThreshold))
-				{
-					var actorList = string.Join(", ", InvisibleActorsThisTick.Take(10));
-					var suffix = InvisibleActorsThisTick.Count > 10 ? "..." : "";
-					Log.Write("debug",
-						$"[VOXEL-MASS-BLINK-TICK] Tick {currentTick}: {invisibleCountThisTick} actors went INVISIBLE, " +
-						$"{visibleCountThisTick} went VISIBLE. Actors: {actorList}{suffix}");
-				}
-
-				currentTick = worldTick;
-				invisibleCountThisTick = 0;
-				visibleCountThisTick = 0;
-				InvisibleActorsThisTick.Clear();
-			}
-
-			if (becameVisible)
-				visibleCountThisTick++;
-			else
-			{
-				invisibleCountThisTick++;
-				InvisibleActorsThisTick.Add($"{self.ActorID}({self.Info.Name})");
-			}
-		}
-
-		public static void RecordFrameVisibilityChange(bool becameVisible, int frameNumber)
-		{
-			// Reset counters on new frame
-			if (frameNumber != currentFrame)
-			{
-				// Check for mass blink on previous frame before resetting
-				if (currentFrame >= 0 && (invisibleCountThisFrame >= MassBlinkThreshold || visibleCountThisFrame >= MassBlinkThreshold))
-				{
-					Log.Write("debug",
-						$"[VOXEL-MASS-BLINK-FRAME] Frame {currentFrame}: " +
-						$"{invisibleCountThisFrame} models went INVISIBLE, {visibleCountThisFrame} went VISIBLE");
-				}
-
-				currentFrame = frameNumber;
-				invisibleCountThisFrame = 0;
-				visibleCountThisFrame = 0;
-			}
-
-			if (becameVisible)
-				visibleCountThisFrame++;
-			else
-				invisibleCountThisFrame++;
-		}
-
-		public static bool ShouldLogVisibilityChange(Actor self)
-		{
-			// Filter 1: Skip known toggle actors (miners, etc.)
-			if (ExpectedToggleActors.Contains(self.Info.Name))
-				return false;
-
-			return true;
-		}
-	}
-
 	public interface IRenderActorPreviewVoxelsInfo : ITraitInfoInterface
 	{
 		IEnumerable<ModelAnimation> RenderPreviewVoxels(IModelCache cache,
@@ -178,18 +86,12 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 		sealed class AnimationWrapper
 		{
 			readonly ModelAnimation model;
-			readonly Actor self;
-			readonly int componentIndex;
 			bool cachedVisible;
 			WVec cachedOffset;
-			int lastVisibilityChangeTick = -1;
-			bool lastVisibilityChangeWasVisible;
 
-			public AnimationWrapper(ModelAnimation model, Actor self, int componentIndex)
+			public AnimationWrapper(ModelAnimation model)
 			{
 				this.model = model;
-				this.self = self;
-				this.componentIndex = componentIndex;
 			}
 
 			public bool Tick()
@@ -199,51 +101,6 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 				var offset = model.OffsetFunc?.Invoke() ?? WVec.Zero;
 
 				var updated = visible != cachedVisible || offset != cachedOffset;
-
-				// Track visibility changes for mass blink detection and filtered logging
-				if (visible != cachedVisible)
-				{
-					var worldTick = self.World.WorldTick;
-
-					// Always record for mass blink detection
-					VoxelBlinkDetector.RecordVisibilityChange(self, visible, worldTick);
-
-					// Filter 2: Pattern-based filtering - skip paired toggles in same tick
-					// (e.g., dock animations that go INVISIBLE then VISIBLE in same tick)
-					var isPairedToggle = lastVisibilityChangeTick == worldTick && lastVisibilityChangeWasVisible != visible;
-
-				// Log paired toggles as SAME-TICK-BLINK - this IS the bug we're hunting!
-				if (isPairedToggle && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
-				{
-					var disableFuncResult = model.DisableFunc?.Invoke() ?? false;
-					var componentName = componentIndex == 0 ? "body" : $"part{componentIndex}";
-					Log.Write("debug",
-						$"[VOXEL-SAME-TICK-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
-						$"toggled INVISIBLE->VISIBLE in SAME TICK {worldTick}, DisableFunc={disableFuncResult}");
-				}
-				else if (VoxelBlinkDetector.ShouldLogVisibilityChange(self))
-				{
-					// Normal visibility changes (not same-tick toggles)
-					var disableFuncResult = model.DisableFunc?.Invoke() ?? false;
-					var componentName = componentIndex == 0 ? "body" : $"part{componentIndex}";
-
-					if (cachedVisible && !visible)
-					{
-						Log.Write("debug",
-							$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
-							$"became INVISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
-					}
-					else if (!cachedVisible && visible)
-					{
-						Log.Write("debug",
-							$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
-							$"became VISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
-					}
-				}
-
-					lastVisibilityChangeTick = worldTick;
-					lastVisibilityChangeWasVisible = visible;
-				}
 
 				cachedVisible = visible;
 				cachedOffset = offset;
@@ -298,16 +155,6 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 				initializePalettes = false;
 			}
 
-			// DIAGNOSTIC: Log ONLY when ALL components are invisible (potential bug - actor will be invisible)
-			// Partial invisibility (some components invisible) is expected for conditional voxel variants
-			var invisibleCount = components.Count(c => !c.IsVisible);
-			if (invisibleCount == components.Count && components.Count > 0 && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
-			{
-				Log.Write("debug",
-					$"[VOXEL-ALL-INVISIBLE] Actor {self.ActorID} ({self.Info.Name}) " +
-					$"rendering with ALL {invisibleCount} components invisible!");
-			}
-
 			return
 			[
 				new ModelRenderable(
@@ -329,9 +176,8 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 
 		public void Add(ModelAnimation m)
 		{
-			var componentIndex = components.Count;
 			components.Add(m);
-			wrappers.Add(m, new AnimationWrapper(m, self, componentIndex));
+			wrappers.Add(m, new AnimationWrapper(m));
 		}
 
 		public void Remove(ModelAnimation m)

@@ -65,13 +65,6 @@ namespace OpenRA.Mods.Cnc.Traits
 		SheetBuilder sheetBuilderForFrame;
 		bool isInFrame;
 
-		// DIAGNOSTIC: Frame tracking for sheet reuse analysis
-		int frameNumber;
-		int sheetsReusedThisFrame;
-		int sheetsCreatedThisFrame;
-		int emptyModelCountThisFrame;
-		int invalidBoundsCountThisFrame;
-
 		public void SetPalette(HardwarePalette palette)
 		{
 			shader.SetTexture("Palette", palette.Texture);
@@ -107,19 +100,12 @@ namespace OpenRA.Mods.Cnc.Traits
 			if (!isInFrame)
 				throw new InvalidOperationException("BeginFrame has not been called. You cannot render until a frame has been started.");
 
-			// DIAGNOSTIC: Check for empty model collection (all components invisible)
+			// FIX: Return null for empty model collections (all components invisible)
+			// This prevents invalid sprite bounds (float.MaxValue/MinValue) from being created
+			// which would otherwise cause visual glitches (voxel blink)
 			var modelList = models.ToList();
 			if (modelList.Count == 0)
-			{
-				emptyModelCountThisFrame++;
-				// Log first few occurrences per frame to avoid spam
-				if (emptyModelCountThisFrame <= 5)
-				{
-					Log.Write("debug",
-						$"[VOXEL-EMPTY-MODELS] Frame {frameNumber}: RenderAsync called with EMPTY model collection! " +
-						$"(occurrence {emptyModelCountThisFrame} this frame)");
-				}
-			}
+				return null;
 
 			// Correct for inverted y-axis
 			var scaleTransform = Util.ScaleMatrix(scale, scale, scale);
@@ -173,21 +159,6 @@ namespace OpenRA.Mods.Cnc.Traits
 			br += SpritePadding;
 			stl -= SpritePadding;
 			sbr += SpritePadding;
-
-			// DIAGNOSTIC: Check for invalid bounds (indicates empty model collection or calculation error)
-			var boundsWidth = br.X - tl.X;
-			var boundsHeight = br.Y - tl.Y;
-			if (boundsWidth <= 0 || boundsHeight <= 0 || float.IsInfinity(boundsWidth) || float.IsInfinity(boundsHeight))
-			{
-				invalidBoundsCountThisFrame++;
-				if (invalidBoundsCountThisFrame <= 5)
-				{
-					Log.Write("debug",
-						$"[VOXEL-INVALID-BOUNDS] Frame {frameNumber}: Invalid sprite bounds! " +
-						$"tl=({tl.X:F2},{tl.Y:F2}) br=({br.X:F2},{br.Y:F2}) " +
-						$"width={boundsWidth:F2} height={boundsHeight:F2} modelCount={modelList.Count}");
-				}
-			}
 
 			// Corners of the shadow quad, in shadow-space
 			var corners = new float[][]
@@ -320,14 +291,6 @@ namespace OpenRA.Mods.Cnc.Traits
 			float[] ambientLight, float[] diffuseLight,
 			float colorPaletteTextureIndex, float normalsPaletteTextureIndex)
 		{
-			// DIAGNOSTIC: Check if sheet is disposed (indicates stale reference from sheet overflow)
-			if (renderData.Sheet.IsDisposed)
-			{
-				Log.Write("debug",
-					$"[VOXEL-SHEET-INVALID] Attempting to render with DISPOSED sheet ID={renderData.Sheet.SheetId}!");
-				return; // Skip rendering this model to prevent crash
-			}
-
 			shader.SetTexture("DiffuseTexture", renderData.Sheet.GetTexture());
 			shader.SetVec("Palettes", colorPaletteTextureIndex, normalsPaletteTextureIndex);
 			shader.SetMatrix("TransformMatrix", t);
@@ -343,22 +306,6 @@ namespace OpenRA.Mods.Cnc.Traits
 		{
 			if (isInFrame)
 				throw new InvalidOperationException("BeginFrame has already been called. A new frame cannot be started until EndFrame has been called.");
-
-			// DIAGNOSTIC: Log summary of previous frame if there were issues
-			if (emptyModelCountThisFrame > 0 || invalidBoundsCountThisFrame > 0)
-			{
-				Log.Write("debug",
-					$"[VOXEL-FRAME-SUMMARY] Frame {frameNumber}: " +
-					$"emptyModels={emptyModelCountThisFrame}, invalidBounds={invalidBoundsCountThisFrame}, " +
-					$"sheetsReused={sheetsReusedThisFrame}, sheetsCreated={sheetsCreatedThisFrame}");
-			}
-
-			// DIAGNOSTIC: Increment frame counter and reset per-frame counters
-			frameNumber++;
-			sheetsReusedThisFrame = 0;
-			sheetsCreatedThisFrame = 0;
-			emptyModelCountThisFrame = 0;
-			invalidBoundsCountThisFrame = 0;
 
 			isInFrame = true;
 
@@ -395,10 +342,6 @@ namespace OpenRA.Mods.Cnc.Traits
 			if (doRender.Count == 0)
 				return;
 
-			// DIAGNOSTIC: Track render execution count
-			var renderCount = 0;
-			var emptyRenderCount = 0;
-
 			Sheet currentSheet = null;
 			IFrameBuffer fbo = null;
 			foreach (var v in doRender)
@@ -414,15 +357,6 @@ namespace OpenRA.Mods.Cnc.Traits
 				}
 
 				v.Func();
-				renderCount++;
-			}
-
-			// DIAGNOSTIC: Log render stats for this frame if significant
-			if (renderCount > 0 && (emptyModelCountThisFrame > 0 || invalidBoundsCountThisFrame > 0))
-			{
-				Log.Write("debug",
-					$"[VOXEL-ENDFRAME] Frame {frameNumber}: Rendered {renderCount} voxels to {mappedBuffers.Count} sheets. " +
-					$"Empty models: {emptyModelCountThisFrame}, Invalid bounds: {invalidBoundsCountThisFrame}");
 			}
 
 			if (fbo != null)
@@ -436,17 +370,10 @@ namespace OpenRA.Mods.Cnc.Traits
 			// Reuse cached fbo
 			if (unmappedBuffers.Count > 0)
 			{
-				sheetsReusedThisFrame++;
 				var kv = unmappedBuffers.Pop();
 				mappedBuffers.Add(kv.Key, kv.Value);
 				return kv.Key;
 			}
-
-			// DIAGNOSTIC: Log when buffer pool is exhausted and new buffer is created
-			sheetsCreatedThisFrame++;
-			Log.Write("debug",
-				$"[VOXEL-BUFFER] Frame {frameNumber}: Buffer pool EXHAUSTED! " +
-				$"Creating new framebuffer #{mappedBuffers.Count + 1}");
 
 			var framebuffer = renderer.CreateFrameBuffer(new Size(sheetSize, sheetSize));
 			var sheet = new Sheet(SheetType.BGRA, framebuffer.Texture);

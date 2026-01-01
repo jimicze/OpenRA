@@ -107,12 +107,6 @@ namespace OpenRA.Platforms.Default
 			VerifyThreadAffinity();
 			OpenGL.glFlush();
 			OpenGL.CheckGLError();
-
-			// DIAGNOSTIC: Force GPU sync to test if async rendering causes voxel blink
-			// This has a performance impact but ensures GPU finishes before we read from the texture
-			OpenGL.glFinish();
-			OpenGL.CheckGLError();
-
 			OpenGL.glBindFramebuffer(OpenGL.GL_FRAMEBUFFER, 0);
 			OpenGL.CheckGLError();
 			OpenGL.glViewport(cv[0], cv[1], cv[2], cv[3]);
