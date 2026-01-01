@@ -298,13 +298,14 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 				initializePalettes = false;
 			}
 
-			// DIAGNOSTIC: Log when rendering with invisible components (with actor info)
+			// DIAGNOSTIC: Log ONLY when ALL components are invisible (potential bug - actor will be invisible)
+			// Partial invisibility (some components invisible) is expected for conditional voxel variants
 			var invisibleCount = components.Count(c => !c.IsVisible);
-			if (invisibleCount > 0 && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
+			if (invisibleCount == components.Count && components.Count > 0 && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
 			{
 				Log.Write("debug",
-					$"[VOXEL-RENDER-INVISIBLE] Actor {self.ActorID} ({self.Info.Name}) " +
-					$"rendering with {invisibleCount}/{components.Count} invisible components");
+					$"[VOXEL-ALL-INVISIBLE] Actor {self.ActorID} ({self.Info.Name}) " +
+					$"rendering with ALL {invisibleCount} components invisible!");
 			}
 
 			return
