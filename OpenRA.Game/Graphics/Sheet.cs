@@ -49,7 +49,6 @@ namespace OpenRA.Graphics
 			Type = type;
 			Size = size;
 			SheetId = Interlocked.Increment(ref nextSheetId);
-			Log.Write("debug", $"[SHEET] Created sheet ID={SheetId} type={type} size={size}");
 		}
 
 		public Sheet(SheetType type, ITexture texture)
@@ -58,7 +57,6 @@ namespace OpenRA.Graphics
 			this.texture = texture;
 			Size = texture.Size;
 			SheetId = Interlocked.Increment(ref nextSheetId);
-			Log.Write("debug", $"[SHEET] Created sheet ID={SheetId} type={type} from texture");
 		}
 
 		public Sheet(SheetType type, Stream stream)
@@ -71,7 +69,6 @@ namespace OpenRA.Graphics
 
 			Type = type;
 			ReleaseBuffer();
-			Log.Write("debug", $"[SHEET] Created sheet ID={SheetId} type={type} from stream");
 		}
 
 		public ITexture GetTexture()
@@ -149,14 +146,12 @@ namespace OpenRA.Graphics
 			if (!Buffered)
 				return;
 
-			Log.Write("debug", $"[SHEET] ReleaseBuffer called on sheet ID={SheetId}, committing to GPU...");
 			dirty = true;
 			releaseBufferOnCommit = true;
 
 			// Commit data from the buffer to the texture, allowing the buffer to be released and reclaimed by GC.
 			if (Game.Renderer != null)
 				GetTexture();
-			Log.Write("debug", $"[SHEET] ReleaseBuffer complete on sheet ID={SheetId}, texture valid: {texture != null}");
 		}
 
 		public bool ReleaseBufferAndTryTransferTo(Sheet destination)
@@ -187,7 +182,6 @@ namespace OpenRA.Graphics
 			if (IsDisposed)
 				return;
 
-			Log.Write("debug", $"[SHEET] Dispose called on sheet ID={SheetId}, texture was: {texture != null}");
 			IsDisposed = true;
 			texture?.Dispose();
 		}
