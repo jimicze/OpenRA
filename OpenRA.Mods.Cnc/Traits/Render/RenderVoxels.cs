@@ -212,26 +212,34 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 					// (e.g., dock animations that go INVISIBLE then VISIBLE in same tick)
 					var isPairedToggle = lastVisibilityChangeTick == worldTick && lastVisibilityChangeWasVisible != visible;
 
-					// Only log if passes both filters
-					if (!isPairedToggle && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
-					{
-						// Check if DisableFunc exists and what it returns
-						var disableFuncResult = model.DisableFunc?.Invoke() ?? false;
-						var componentName = componentIndex == 0 ? "body" : $"part{componentIndex}";
+				// Log paired toggles as SAME-TICK-BLINK - this IS the bug we're hunting!
+				if (isPairedToggle && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
+				{
+					var disableFuncResult = model.DisableFunc?.Invoke() ?? false;
+					var componentName = componentIndex == 0 ? "body" : $"part{componentIndex}";
+					Log.Write("debug",
+						$"[VOXEL-SAME-TICK-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
+						$"toggled INVISIBLE->VISIBLE in SAME TICK {worldTick}, DisableFunc={disableFuncResult}");
+				}
+				else if (VoxelBlinkDetector.ShouldLogVisibilityChange(self))
+				{
+					// Normal visibility changes (not same-tick toggles)
+					var disableFuncResult = model.DisableFunc?.Invoke() ?? false;
+					var componentName = componentIndex == 0 ? "body" : $"part{componentIndex}";
 
-						if (cachedVisible && !visible)
-						{
-							Log.Write("debug",
-								$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
-								$"became INVISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
-						}
-						else if (!cachedVisible && visible)
-						{
-							Log.Write("debug",
-								$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
-								$"became VISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
-						}
+					if (cachedVisible && !visible)
+					{
+						Log.Write("debug",
+							$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
+							$"became INVISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
 					}
+					else if (!cachedVisible && visible)
+					{
+						Log.Write("debug",
+							$"[VOXEL-BLINK] Actor {self.ActorID} ({self.Info.Name}) {componentName} " +
+							$"became VISIBLE at tick {worldTick}, DisableFunc={disableFuncResult}");
+					}
+				}
 
 					lastVisibilityChangeTick = worldTick;
 					lastVisibilityChangeWasVisible = visible;
@@ -288,6 +296,15 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 				normalsPalette = wr.Palette(Info.NormalsPalette);
 				shadowPalette = wr.Palette(Info.ShadowPalette);
 				initializePalettes = false;
+			}
+
+			// DIAGNOSTIC: Log when rendering with invisible components (with actor info)
+			var invisibleCount = components.Count(c => !c.IsVisible);
+			if (invisibleCount > 0 && VoxelBlinkDetector.ShouldLogVisibilityChange(self))
+			{
+				Log.Write("debug",
+					$"[VOXEL-RENDER-INVISIBLE] Actor {self.ActorID} ({self.Info.Name}) " +
+					$"rendering with {invisibleCount}/{components.Count} invisible components");
 			}
 
 			return
