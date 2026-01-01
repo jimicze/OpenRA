@@ -123,6 +123,14 @@ namespace OpenRA.Mods.Common
 			return delta <= facingTolerance.Angle || delta >= 1024 - facingTolerance.Angle;
 		}
 
+		public static int NormalizeFacing(int f)
+		{
+			if (f >= 0)
+				return f & 0xFF;
+
+			return 0xFF - (-f & 0xFF);
+		}
+
 		public static WPos BetweenCells(World w, CPos from, CPos to)
 		{
 			var fromPos = from.Layer == 0 ? w.Map.CenterOfCell(from) :
