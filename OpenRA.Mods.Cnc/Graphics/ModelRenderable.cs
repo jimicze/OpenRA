@@ -127,7 +127,16 @@ namespace OpenRA.Mods.Cnc.Graphics
 			public FinalizedModelRenderable(WorldRenderer wr, ModelRenderable model)
 			{
 				this.model = model;
-				var draw = model.models.Where(v => v.IsVisible);
+				var draw = model.models.Where(v => v.IsVisible).ToList();
+
+				// FIX: Skip rendering when all voxel components are invisible
+				// This prevents invalid sprite bounds (infinite dimensions) from corrupting the sprite sheet
+				// Common cases: Mirage Tank disguised as tree, buildings under construction
+				if (draw.Count == 0)
+				{
+					renderProxy = null;
+					return;
+				}
 
 				var map = wr.World.Map;
 				var groundOrientation = map.TerrainOrientation(map.CellContaining(model.Pos));
@@ -139,6 +148,10 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 			public void Render(WorldRenderer wr)
 			{
+				// FIX: Skip rendering if no visible voxel components (renderProxy is null)
+				if (renderProxy == null)
+					return;
+
 				var map = wr.World.Map;
 				var groundPos = model.Pos - new WVec(0, 0, map.DistanceAboveTerrain(model.Pos).Length);
 				var groundZ = (float)map.Rules.TerrainInfo.TileSize.Height * (groundPos.Z - model.Pos.Z) / map.Grid.TileScale;
@@ -178,6 +191,10 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 			public void RenderDebugGeometry(WorldRenderer wr)
 			{
+				// FIX: Skip debug rendering if no visible voxel components
+				if (renderProxy == null)
+					return;
+
 				var groundPos = model.Pos - new WVec(0, 0, wr.World.Map.DistanceAboveTerrain(model.Pos).Length);
 				var groundZ = wr.World.Map.Rules.TerrainInfo.TileSize.Height * (groundPos.Z - model.Pos.Z) / 1024f;
 				var pxOrigin = wr.Screen3DPosition(model.Pos);
