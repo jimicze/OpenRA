@@ -284,6 +284,14 @@ namespace OpenRA.Mods.Cnc.Traits
 			float[] ambientLight, float[] diffuseLight,
 			float colorPaletteTextureIndex, float normalsPaletteTextureIndex)
 		{
+			// DIAGNOSTIC: Check if sheet is disposed (indicates stale reference from sheet overflow)
+			if (renderData.Sheet.IsDisposed)
+			{
+				Log.Write("debug",
+					$"[VOXEL-SHEET-INVALID] Attempting to render with DISPOSED sheet ID={renderData.Sheet.SheetId}!");
+				return; // Skip rendering this model to prevent crash
+			}
+
 			shader.SetTexture("DiffuseTexture", renderData.Sheet.GetTexture());
 			shader.SetVec("Palettes", colorPaletteTextureIndex, normalsPaletteTextureIndex);
 			shader.SetMatrix("TransformMatrix", t);
@@ -367,6 +375,9 @@ namespace OpenRA.Mods.Cnc.Traits
 				mappedBuffers.Add(kv.Key, kv.Value);
 				return kv.Key;
 			}
+
+			// DIAGNOSTIC: Log when buffer pool is exhausted and new buffer is created
+			Log.Write("debug", $"[VOXEL-BUFFER] Frame buffer pool EXHAUSTED! Creating new framebuffer. Current mapped: {mappedBuffers.Count}");
 
 			var framebuffer = renderer.CreateFrameBuffer(new Size(sheetSize, sheetSize));
 			var sheet = new Sheet(SheetType.BGRA, framebuffer.Texture);

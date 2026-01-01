@@ -30,6 +30,8 @@ namespace OpenRA.Mods.Cnc.Graphics
 		int totalVertexCount;
 		int cachedVertexCount;
 
+		// Multi-sheet support: track all sheets to prevent invalidation and ensure proper disposal
+		readonly List<Sheet> allSheets = [];
 		SheetBuilder sheetBuilder;
 
 		static SheetBuilder CreateSheetBuilder()
@@ -55,6 +57,10 @@ namespace OpenRA.Mods.Cnc.Graphics
 			cachedVertexCount = 0;
 
 			sheetBuilder = CreateSheetBuilder();
+
+			// Track the initial sheet
+			if (sheetBuilder.Current != null)
+				allSheets.Add(sheetBuilder.Current);
 		}
 
 		ModelVertex[] GenerateSlicePlane(int su, int sv, Func<int, int, VxlElement?> first, Func<int, int, VxlElement?> second, Func<int, int, float3> coord)
@@ -177,11 +183,32 @@ namespace OpenRA.Mods.Cnc.Graphics
 			}
 			catch (SheetOverflowException)
 			{
-				// Sheet overflow - allocate a new sheet and try once more
-				Log.Write("debug", "Voxel sheet overflow! Generating new sheet");
-				sheetBuilder.Current.ReleaseBuffer();
+				// Sheet overflow - keep the old sheet alive and create a new one
+				// This prevents invalidating voxels that were already loaded on the old sheet
+				var oldSheet = sheetBuilder.Current;
+				var oldSheetId = oldSheet?.SheetId ?? -1;
+
+				Log.Write("debug", $"[VOXEL-OVERFLOW] Sheet overflow! Old sheet ID={oldSheetId}, committing to GPU and keeping alive...");
+
+				// Commit the old sheet's data to GPU (but don't dispose it!)
+				// Old voxels still reference this sheet and need it to remain valid
+				oldSheet?.ReleaseBuffer();
+
+				Log.Write("debug", $"[VOXEL-OVERFLOW] Old sheet ID={oldSheetId} committed. Creating new SheetBuilder for additional capacity...");
+
+				// Create a new SheetBuilder with a fresh sheet
 				sheetBuilder = CreateSheetBuilder();
+
+				// Track the new sheet
+				if (sheetBuilder.Current != null)
+				{
+					allSheets.Add(sheetBuilder.Current);
+					Log.Write("debug", $"[VOXEL-OVERFLOW] New sheet ID={sheetBuilder.Current.SheetId} created. Total sheets: {allSheets.Count}");
+				}
+
+				// Regenerate slice planes on the new sheet
 				v = GenerateSlicePlanes(l).SelectMany(x => x).ToArray();
+				Log.Write("debug", $"[VOXEL-OVERFLOW] Regenerated slice planes on new sheet ID={sheetBuilder.Current?.SheetId}");
 			}
 
 			vertices.Add(v);
@@ -194,9 +221,12 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 		public void RefreshBuffer()
 		{
+			Log.Write("debug",
+				$"[VOXEL-BUFFER] RefreshBuffer called. Total vertices: {totalVertexCount}, Cached: {cachedVertexCount}");
 			vertexBuffer?.Dispose();
 			vertexBuffer = Game.Renderer.CreateVertexBuffer(vertices.SelectMany(v => v).ToArray(), false);
 			cachedVertexCount = totalVertexCount;
+			Log.Write("debug", "[VOXEL-BUFFER] RefreshBuffer complete. New buffer created.");
 		}
 
 		public IVertexBuffer<ModelVertex> VertexBuffer
@@ -204,13 +234,20 @@ namespace OpenRA.Mods.Cnc.Graphics
 			get
 			{
 				if (cachedVertexCount != totalVertexCount)
+				{
+					Log.Write("debug",
+						"[VOXEL-BUFFER] VertexBuffer getter: count mismatch " +
+						$"(cached={cachedVertexCount}, total={totalVertexCount}), refreshing...");
 					RefreshBuffer();
+				}
+
 				return vertexBuffer;
 			}
 		}
 
 		Voxel LoadFile((string Vxl, string Hva) files)
 		{
+			Log.Write("debug", $"[VOXEL-LOAD] Loading voxel: {files.Vxl}.vxl / {files.Hva}.hva");
 			VxlReader vxl;
 			HvaReader hva;
 			using (var s = fileSystem.Open(files.Vxl + ".vxl"))
@@ -234,6 +271,13 @@ namespace OpenRA.Mods.Cnc.Graphics
 		public void Dispose()
 		{
 			vertexBuffer?.Dispose();
+
+			// Dispose all tracked sheets (multi-sheet support)
+			Log.Write("debug", $"[VOXEL-DISPOSE] Disposing VoxelLoader with {allSheets.Count} sheets");
+			foreach (var sheet in allSheets)
+				sheet.Dispose();
+			allSheets.Clear();
+
 			sheetBuilder.Dispose();
 		}
 	}

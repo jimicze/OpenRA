@@ -129,6 +129,12 @@ namespace OpenRA.Mods.Cnc.Graphics
 				this.model = model;
 				var draw = model.models.Where(v => v.IsVisible);
 
+				// DIAGNOSTIC: Log when no visible models (all filtered out by IsVisible)
+				if (!draw.Any())
+				{
+					Log.Write("debug", $"[VOXEL-RENDER] FinalizedModelRenderable created with NO VISIBLE models at pos {model.Pos}");
+				}
+
 				var map = wr.World.Map;
 				var groundOrientation = map.TerrainOrientation(map.CellContaining(model.Pos));
 				renderProxy = model.renderer.RenderAsync(
