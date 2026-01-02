@@ -1,4 +1,4 @@
-﻿#region Copyright & License Information
+#region Copyright & License Information
 /*
  * Copyright 2015- OpenRA.Mods.AS Developers (see AUTHORS)
  * This file is a part of a third-party plugin for OpenRA, which is
@@ -28,6 +28,11 @@ namespace OpenRA.Mods.AS.Effects
 		readonly IDefaultVisibility visibility;
 		readonly IVisibilityModifier[] visibilityModifiers;
 
+		// Cache provider lookup per player to avoid repeated .Exists() calls
+		readonly bool[] hasProviderCache;
+		int lastProviderCacheUpdate = -1;
+		const int ProviderCacheUpdateInterval = 7; // Update every 7 ticks (~233ms at 30fps)
+
 		class RangedDotState
 		{
 			public readonly RangedGpsWatcher Watcher;
@@ -53,9 +58,28 @@ namespace OpenRA.Mods.AS.Effects
 
 			dotStates = new PlayerDictionary<RangedDotState>(actor.World,
 				p => new RangedDotState(actor, p.PlayerActor.Trait<RangedGpsWatcher>(), p.FrozenActorLayer));
+
+			hasProviderCache = new bool[actor.World.Players.Length];
 		}
 
-		bool ShouldRender(RangedDotState state, Player toPlayer)
+		void UpdateProviderCache()
+		{
+			for (var i = 0; i < hasProviderCache.Length; i++)
+			{
+				var player = actor.World.Players[i];
+				hasProviderCache[i] = false;
+				foreach (var p in trait.Providers)
+				{
+					if (p.Owner == player && !p.IsDead)
+					{
+						hasProviderCache[i] = true;
+						break;
+					}
+				}
+			}
+		}
+
+		bool ShouldRender(RangedDotState state, Player toPlayer, int playerIndex)
 		{
 			// Hide the indicator if the owner trait is disabled
 			if (trait.IsTraitDisabled)
@@ -83,8 +107,8 @@ namespace OpenRA.Mods.AS.Effects
 			if (!trait.Info.VisibleInShroud && !toPlayer.Shroud.IsExplored(actor.CenterPosition))
 				return false;
 
-			// Hide the indicator if it is not in range of a provider
-			if (!trait.Providers.Exists(p => p.Owner == toPlayer && !p.IsDead))
+			// Hide the indicator if it is not in range of a provider (use cached value)
+			if (!hasProviderCache[playerIndex])
 				return false;
 
 			return !visibility.IsVisible(actor, toPlayer);
@@ -92,10 +116,17 @@ namespace OpenRA.Mods.AS.Effects
 
 		void IEffect.Tick(World world)
 		{
+			// Update provider cache periodically instead of every tick
+			if (world.WorldTick - lastProviderCacheUpdate >= ProviderCacheUpdateInterval)
+			{
+				UpdateProviderCache();
+				lastProviderCacheUpdate = world.WorldTick;
+			}
+
 			for (var playerIndex = 0; playerIndex < dotStates.Count; playerIndex++)
 			{
 				var state = dotStates[playerIndex];
-				state.Visible = ShouldRender(state, world.Players[playerIndex]);
+				state.Visible = ShouldRender(state, world.Players[playerIndex], playerIndex);
 			}
 		}
 

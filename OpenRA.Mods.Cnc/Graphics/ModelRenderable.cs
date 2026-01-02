@@ -122,7 +122,7 @@ namespace OpenRA.Mods.Cnc.Graphics
 		sealed class FinalizedModelRenderable : IFinalizedRenderable
 		{
 			readonly ModelRenderable model;
-			readonly ModelRenderProxy renderProxy;
+			readonly ModelRenderProxy renderProxy; // null when all voxel components are invisible
 
 			public FinalizedModelRenderable(WorldRenderer wr, ModelRenderable model)
 			{
@@ -131,6 +131,8 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 				var map = wr.World.Map;
 				var groundOrientation = map.TerrainOrientation(map.CellContaining(model.Pos));
+
+				// RenderAsync returns null when no visible models exist (e.g., Mirage Tank disguised as tree)
 				renderProxy = model.renderer.RenderAsync(
 					wr, draw, model.camera, model.scale, groundOrientation, model.lightSource,
 					model.lightAmbientColor, model.lightDiffuseColor,
@@ -139,6 +141,10 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 			public void Render(WorldRenderer wr)
 			{
+				// Skip rendering when all voxel components are invisible (e.g., Mirage Tank disguised as tree)
+				if (renderProxy == null)
+					return;
+
 				var map = wr.World.Map;
 				var groundPos = model.Pos - new WVec(0, 0, map.DistanceAboveTerrain(model.Pos).Length);
 				var groundZ = (float)map.Rules.TerrainInfo.TileSize.Height * (groundPos.Z - model.Pos.Z) / map.Grid.TileScale;
@@ -178,6 +184,10 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 			public void RenderDebugGeometry(WorldRenderer wr)
 			{
+				// Skip debug rendering when all voxel components are invisible
+				if (renderProxy == null)
+					return;
+
 				var groundPos = model.Pos - new WVec(0, 0, wr.World.Map.DistanceAboveTerrain(model.Pos).Length);
 				var groundZ = wr.World.Map.Rules.TerrainInfo.TileSize.Height * (groundPos.Z - model.Pos.Z) / 1024f;
 				var pxOrigin = wr.Screen3DPosition(model.Pos);

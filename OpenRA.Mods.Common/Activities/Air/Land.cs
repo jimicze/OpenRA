@@ -239,7 +239,9 @@ namespace OpenRA.Mods.Common.Activities
 				foreach (var notify in self.TraitsImplementing<INotifyLanding>())
 					notify.Landing(self);
 
-				aircraft.AddInfluence(landingCell);
+				// Only add influence if aircraft doesn't already have it (e.g., spawned landed)
+				if (!aircraft.HasInfluence())
+					aircraft.AddInfluence(landingCell);
 				aircraft.EnteringCell(self);
 				landingInitiated = true;
 			}

@@ -30,6 +30,8 @@ namespace OpenRA.Mods.Cnc.Graphics
 		int totalVertexCount;
 		int cachedVertexCount;
 
+		// Multi-sheet support: track all sheets to prevent invalidation and ensure proper disposal
+		readonly List<Sheet> allSheets = [];
 		SheetBuilder sheetBuilder;
 
 		static SheetBuilder CreateSheetBuilder()
@@ -55,6 +57,10 @@ namespace OpenRA.Mods.Cnc.Graphics
 			cachedVertexCount = 0;
 
 			sheetBuilder = CreateSheetBuilder();
+
+			// Track the initial sheet
+			if (sheetBuilder.Current != null)
+				allSheets.Add(sheetBuilder.Current);
 		}
 
 		ModelVertex[] GenerateSlicePlane(int su, int sv, Func<int, int, VxlElement?> first, Func<int, int, VxlElement?> second, Func<int, int, float3> coord)
@@ -177,10 +183,22 @@ namespace OpenRA.Mods.Cnc.Graphics
 			}
 			catch (SheetOverflowException)
 			{
-				// Sheet overflow - allocate a new sheet and try once more
-				Log.Write("debug", "Voxel sheet overflow! Generating new sheet");
-				sheetBuilder.Current.ReleaseBuffer();
+				// Sheet overflow - keep the old sheet alive and create a new one
+				// This prevents invalidating voxels that were already loaded on the old sheet
+				var oldSheet = sheetBuilder.Current;
+
+				// Commit the old sheet's data to GPU (but don't dispose it!)
+				// Old voxels still reference this sheet and need it to remain valid
+				oldSheet?.ReleaseBuffer();
+
+				// Create a new SheetBuilder with a fresh sheet
 				sheetBuilder = CreateSheetBuilder();
+
+				// Track the new sheet
+				if (sheetBuilder.Current != null)
+					allSheets.Add(sheetBuilder.Current);
+
+				// Regenerate slice planes on the new sheet
 				v = GenerateSlicePlanes(l).SelectMany(x => x).ToArray();
 			}
 
@@ -205,6 +223,7 @@ namespace OpenRA.Mods.Cnc.Graphics
 			{
 				if (cachedVertexCount != totalVertexCount)
 					RefreshBuffer();
+
 				return vertexBuffer;
 			}
 		}
@@ -234,6 +253,12 @@ namespace OpenRA.Mods.Cnc.Graphics
 		public void Dispose()
 		{
 			vertexBuffer?.Dispose();
+
+			// Dispose all tracked sheets (multi-sheet support)
+			foreach (var sheet in allSheets)
+				sheet.Dispose();
+			allSheets.Clear();
+
 			sheetBuilder.Dispose();
 		}
 	}

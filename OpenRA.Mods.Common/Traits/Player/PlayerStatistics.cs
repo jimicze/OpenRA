@@ -279,6 +279,10 @@ namespace OpenRA.Mods.Common.Traits
 
 		void INotifyOwnerChanged.OnOwnerChanged(Actor self, Player oldOwner, Player newOwner)
 		{
+			// During world disposal, the new owner's PlayerActor may already be destroyed
+			if (newOwner.PlayerActor.Disposed)
+				return;
+
 			var newOwnerStats = newOwner.PlayerActor.Trait<PlayerStatistics>();
 			if (includedInArmyValue)
 			{

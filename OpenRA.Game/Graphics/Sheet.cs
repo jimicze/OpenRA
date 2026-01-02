@@ -11,6 +11,7 @@
 
 using System;
 using System.IO;
+using System.Threading;
 using OpenRA.FileFormats;
 using OpenRA.Primitives;
 
@@ -18,6 +19,9 @@ namespace OpenRA.Graphics
 {
 	public sealed class Sheet : IDisposable
 	{
+		// Static counter for unique sheet IDs
+		static int nextSheetId;
+
 		bool dirty;
 		bool releaseBufferOnCommit;
 		ITexture texture;
@@ -25,6 +29,12 @@ namespace OpenRA.Graphics
 
 		public readonly Size Size;
 		public readonly SheetType Type;
+
+		/// <summary>Unique identifier for this sheet instance, useful for debugging.</summary>
+		public readonly int SheetId;
+
+		/// <summary>Returns true if this sheet has been disposed.</summary>
+		public bool IsDisposed { get; private set; }
 
 		public byte[] GetData()
 		{
@@ -38,6 +48,7 @@ namespace OpenRA.Graphics
 		{
 			Type = type;
 			Size = size;
+			SheetId = Interlocked.Increment(ref nextSheetId);
 		}
 
 		public Sheet(SheetType type, ITexture texture)
@@ -45,10 +56,12 @@ namespace OpenRA.Graphics
 			Type = type;
 			this.texture = texture;
 			Size = texture.Size;
+			SheetId = Interlocked.Increment(ref nextSheetId);
 		}
 
 		public Sheet(SheetType type, Stream stream)
 		{
+			SheetId = Interlocked.Increment(ref nextSheetId);
 			var png = new Png(stream);
 			Size = new Size(png.Width, png.Height);
 			data = new byte[4 * Size.Width * Size.Height];
@@ -166,6 +179,10 @@ namespace OpenRA.Graphics
 
 		public void Dispose()
 		{
+			if (IsDisposed)
+				return;
+
+			IsDisposed = true;
 			texture?.Dispose();
 		}
 	}

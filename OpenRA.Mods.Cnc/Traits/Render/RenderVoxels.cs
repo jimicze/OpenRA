@@ -101,6 +101,7 @@ namespace OpenRA.Mods.Cnc.Traits.Render
 				var offset = model.OffsetFunc?.Invoke() ?? WVec.Zero;
 
 				var updated = visible != cachedVisible || offset != cachedOffset;
+
 				cachedVisible = visible;
 				cachedOffset = offset;
 

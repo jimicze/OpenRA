@@ -100,6 +100,13 @@ namespace OpenRA.Mods.Cnc.Traits
 			if (!isInFrame)
 				throw new InvalidOperationException("BeginFrame has not been called. You cannot render until a frame has been started.");
 
+			// FIX: Return null for empty model collections (all components invisible)
+			// This prevents invalid sprite bounds (float.MaxValue/MinValue) from being created
+			// which would otherwise cause visual glitches (voxel blink)
+			var modelList = models.ToList();
+			if (modelList.Count == 0)
+				return null;
+
 			// Correct for inverted y-axis
 			var scaleTransform = Util.ScaleMatrix(scale, scale, scale);
 
@@ -125,7 +132,7 @@ namespace OpenRA.Mods.Cnc.Traits
 			var stl = new float2(float.MaxValue, float.MaxValue);
 			var sbr = new float2(float.MinValue, float.MinValue);
 
-			foreach (var m in models)
+			foreach (var m in modelList)
 			{
 				// Convert screen offset back to world coords
 				var offsetVec = Util.MatrixVectorMultiply(invCameraTransform, wr.ScreenVector(m.OffsetFunc()));
@@ -196,7 +203,7 @@ namespace OpenRA.Mods.Cnc.Traits
 
 			void RenderFunc()
 			{
-				foreach (var m in models)
+				foreach (var m in modelList)
 				{
 					// Convert screen offset to world offset
 					var offsetVec = Util.MatrixVectorMultiply(invCameraTransform, wr.ScreenVector(m.OffsetFunc()));
