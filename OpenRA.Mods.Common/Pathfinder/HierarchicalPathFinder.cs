@@ -1,4 +1,4 @@
-﻿#region Copyright & License Information
+#region Copyright & License Information
 /*
  * Copyright (c) The OpenRA Developers and Contributors
  * This file is part of OpenRA, which is free software. It is made
@@ -1169,10 +1169,13 @@ namespace OpenRA.Mods.Common.Pathfinder
 						}
 					}
 
-					if (maybeAbstractCell == null)
-						throw new Exception(
-							"The abstract path should never be searched for an unreachable point. " +
-							$"Cell {cell} failed lookup for an abstract cell.");
+				if (maybeAbstractCell == null)
+				{
+					// This indicates a bug in the abstract graph, but we shouldn't crash.
+					// Log a warning and treat this cell as unpathable.
+					Log.Write("debug", $"[PATH-WARN] Cell {cell} failed lookup for an abstract cell - treating as unpathable");
+					return PathGraph.PathCostForInvalidPath;
+				}
 				}
 
 				var abstractCell = maybeAbstractCell.Value;
@@ -1183,9 +1186,13 @@ namespace OpenRA.Mods.Common.Pathfinder
 				{
 					abstractSearch.TargetPredicate = c => c == abstractCell;
 					if (!abstractSearch.ExpandToTarget())
-						throw new Exception(
-							"The abstract path should never be searched for an unreachable point. " +
-							$"Abstract cell {abstractCell} failed to route to abstract cell.");
+					{
+						// This indicates a bug in the abstract graph, but we shouldn't crash.
+						// Log a warning and treat this cell as unpathable.
+						Log.Write("debug", $"[PATH-WARN] Abstract cell {abstractCell} failed to route - treating as unpathable");
+						return PathGraph.PathCostForInvalidPath;
+					}
+
 					info = graph[abstractCell];
 				}
 
