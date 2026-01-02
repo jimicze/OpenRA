@@ -102,8 +102,9 @@ namespace OpenRA.Mods.Common.Traits
 							t.BotTick(this);
 							var after = sw.ElapsedMilliseconds;
 							var elapsed = after - before;
-							if (elapsed > 10)
-								Log.Write("debug", $"[LAG-BOT] {t.GetType().Name} took {elapsed}ms");
+							// DIAGNOSTICS DISABLED - uncomment to re-enable lag bot logging
+							// if (elapsed > 10)
+							// 	Log.Write("debug", $"[LAG-BOT] {t.GetType().Name} took {elapsed}ms");
 						}
 					}
 				});

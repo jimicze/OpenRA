@@ -684,13 +684,14 @@ namespace OpenRA
 					}
 
 					var totalMs = innerTickStopwatch.ElapsedMilliseconds;
-					if (totalMs > InnerTickThresholdMs && didTick)
-					{
-						Log.Write("debug",
-							$"[LAG-TICK] {totalMs}ms: sound={afterSound}ms, tickImmediate={afterTickImmediate - afterSound}ms, " +
-							$"tryTick={afterTryTick - afterTickImmediate}ms, worldTick={afterWorldTick - afterTryTick}ms, " +
-							$"tickRender={afterTickRender - afterWorldTick}ms (actors={world.Actors.Count()})");
-					}
+					// DIAGNOSTICS DISABLED - uncomment to re-enable lag tick logging
+					// if (totalMs > InnerTickThresholdMs && didTick)
+					// {
+					// 	Log.Write("debug",
+					// 		$"[LAG-TICK] {totalMs}ms: sound={afterSound}ms, tickImmediate={afterTickImmediate - afterSound}ms, " +
+					// 		$"tryTick={afterTryTick - afterTickImmediate}ms, worldTick={afterWorldTick - afterTryTick}ms, " +
+					// 		$"tickRender={afterTickRender - afterWorldTick}ms (actors={world.Actors.Count()})");
+					// }
 				}
 
 				benchmark?.Tick(LocalTick);
@@ -727,17 +728,18 @@ namespace OpenRA
 			var endMemory = GC.GetTotalMemory(false);
 			var gcOccurred = endGcCount > startGcCount;
 
-			if (totalMs > LagThresholdMs || gcOccurred)
-			{
-				var gcInfo = gcOccurred
-					? $" GC! (Gen0={GC.CollectionCount(0)}, Gen1={GC.CollectionCount(1)}, Gen2={GC.CollectionCount(2)})"
-					: "";
-				var memDelta = (endMemory - startMemory) / 1024.0 / 1024.0;
-				Log.Write("debug",
-					$"[LAG-LOGIC] {totalMs}ms (delayed={afterDelayedActions}ms, " +
-					$"orderMgr={afterOrderManager - afterDelayedActions}ms) " +
-					$"Mem={endMemory / 1024.0 / 1024.0:F1}MB (delta={memDelta:+0.0;-0.0}MB){gcInfo}");
-			}
+			// DIAGNOSTICS DISABLED - uncomment to re-enable lag logic logging
+			// if (totalMs > LagThresholdMs || gcOccurred)
+			// {
+			// 	var gcInfo = gcOccurred
+			// 		? $" GC! (Gen0={GC.CollectionCount(0)}, Gen1={GC.CollectionCount(1)}, Gen2={GC.CollectionCount(2)})"
+			// 		: "";
+			// 	var memDelta = (endMemory - startMemory) / 1024.0 / 1024.0;
+			// 	Log.Write("debug",
+			// 		$"[LAG-LOGIC] {totalMs}ms (delayed={afterDelayedActions}ms, " +
+			// 		$"orderMgr={afterOrderManager - afterDelayedActions}ms) " +
+			// 		$"Mem={endMemory / 1024.0 / 1024.0:F1}MB (delta={memDelta:+0.0;-0.0}MB){gcInfo}");
+			// }
 		}
 
 		public static void PerformDelayedActions()
@@ -830,14 +832,15 @@ namespace OpenRA
 			var endGcCount = GC.CollectionCount(0) + GC.CollectionCount(1) + GC.CollectionCount(2);
 			var gcOccurred = endGcCount > startGcCount;
 
-			if (totalMs > LagThresholdMs || gcOccurred)
-			{
-				var gcInfo = gcOccurred ? " GC!" : "";
-				Log.Write("debug",
-					$"[LAG-RENDER] {totalMs}ms (prepare={afterPrepare}ms, " +
-					$"world={afterWorld - afterPrepare}ms, widgets={afterWidgets - afterWorld}ms, " +
-					$"flip={afterFlip - afterWidgets}ms){gcInfo}");
-			}
+			// DIAGNOSTICS DISABLED - uncomment to re-enable lag render logging
+			// if (totalMs > LagThresholdMs || gcOccurred)
+			// {
+			// 	var gcInfo = gcOccurred ? " GC!" : "";
+			// 	Log.Write("debug",
+			// 		$"[LAG-RENDER] {totalMs}ms (prepare={afterPrepare}ms, " +
+			// 		$"world={afterWorld - afterPrepare}ms, widgets={afterWidgets - afterWorld}ms, " +
+			// 		$"flip={afterFlip - afterWidgets}ms){gcInfo}");
+			// }
 
 			PerfHistory.Items["render"].Tick();
 			PerfHistory.Items["batches"].Tick();

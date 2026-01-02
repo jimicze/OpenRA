@@ -468,14 +468,15 @@ namespace OpenRA
 				var afterEffectsTick = worldTickStopwatch.ElapsedMilliseconds;
 
 				var totalMs = worldTickStopwatch.ElapsedMilliseconds;
-				if (totalMs > WorldTickThresholdMs)
-				{
-					Log.Write("debug",
-						$"[LAG-WORLD] {totalMs}ms: actorTick={afterActorTick}ms, " +
-						$"traitTick={afterTraitTick - afterActorTick}ms, " +
-						$"effectsTick={afterEffectsTick - afterTraitTick}ms " +
-						$"(actors={actors.Count}, effects={effects.Count})");
-				}
+				// DIAGNOSTICS DISABLED - uncomment to re-enable lag world logging
+				// if (totalMs > WorldTickThresholdMs)
+				// {
+				// 	Log.Write("debug",
+				// 		$"[LAG-WORLD] {totalMs}ms: actorTick={afterActorTick}ms, " +
+				// 		$"traitTick={afterTraitTick - afterActorTick}ms, " +
+				// 		$"effectsTick={afterEffectsTick - afterTraitTick}ms " +
+				// 		$"(actors={actors.Count}, effects={effects.Count})");
+				// }
 			}
 
 			while (frameEndActions.Count != 0)
