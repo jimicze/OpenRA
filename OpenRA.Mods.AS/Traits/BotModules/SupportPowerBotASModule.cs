@@ -1,4 +1,4 @@
-﻿#region Copyright & License Information
+#region Copyright & License Information
 /*
  * Copyright 2015- OpenRA.Mods.AS Developers (see AUTHORS)
  * This file is a part of a third-party plugin for OpenRA, which is
@@ -48,6 +48,10 @@ namespace OpenRA.Mods.AS.Traits
 		PlayerResources playerResource;
 		SupportPowerManager supportPowerManager;
 
+		// Throttle support power scanning - only scan every N ticks
+		int lastScanTick = 0;
+		const int ScanInterval = 17; // ~566ms at 30fps
+
 		public SupportPowerBotASModule(Actor self, SupportPowerBotASModuleInfo info)
 			: base(info)
 		{
@@ -65,6 +69,19 @@ namespace OpenRA.Mods.AS.Traits
 
 		void IBotTick.BotTick(IBot bot)
 		{
+			// Throttle expensive scanning - only run full scan periodically
+			var currentTick = world.WorldTick;
+			if (currentTick - lastScanTick < ScanInterval)
+			{
+				// Still update waiting power delays on non-scan ticks
+				foreach (var sp in waitingPowers.Keys.ToList())
+					if (waitingPowers[sp] > 0)
+						waitingPowers[sp]--;
+				return;
+			}
+
+			lastScanTick = currentTick;
+
 			foreach (var sp in supportPowerManager.Powers.Values)
 			{
 				if (sp.Disabled)
