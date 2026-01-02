@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using OpenRA.Effects;
@@ -419,6 +420,10 @@ namespace OpenRA
 			Paused = PredictedPaused = paused;
 		}
 
+		// Lag detection for World.Tick breakdown
+		static readonly Stopwatch worldTickStopwatch = new();
+		const int WorldTickThresholdMs = 50;
+
 		public void Tick()
 		{
 			if (wasLoadingGameSave && !IsLoadingGameSave)
@@ -448,15 +453,29 @@ namespace OpenRA
 			// Some traits initialize important state during the first tick, so we must allow it to tick at least once
 			if (!Paused && (Type != WorldType.Shellmap || !gameSettings.PauseShellmap || WorldTick == 0))
 			{
+				worldTickStopwatch.Restart();
 				WorldTick++;
 
 				using (new PerfSample("tick_actors"))
 					foreach (var a in actors.Values)
 						a.Tick();
+				var afterActorTick = worldTickStopwatch.ElapsedMilliseconds;
 
 				ApplyToActorsWithTraitTimed<ITick>((actor, trait) => trait.Tick(actor), "Trait");
+				var afterTraitTick = worldTickStopwatch.ElapsedMilliseconds;
 
 				effects.DoTimed(e => e.Tick(this), "Effect");
+				var afterEffectsTick = worldTickStopwatch.ElapsedMilliseconds;
+
+				var totalMs = worldTickStopwatch.ElapsedMilliseconds;
+				if (totalMs > WorldTickThresholdMs)
+				{
+					Log.Write("debug",
+						$"[LAG-WORLD] {totalMs}ms: actorTick={afterActorTick}ms, " +
+						$"traitTick={afterTraitTick - afterActorTick}ms, " +
+						$"effectsTick={afterEffectsTick - afterTraitTick}ms " +
+						$"(actors={actors.Count}, effects={effects.Count})");
+				}
 			}
 
 			while (frameEndActions.Count != 0)

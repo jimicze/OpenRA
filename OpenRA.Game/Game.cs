@@ -627,6 +627,10 @@ namespace OpenRA
 			}
 		}
 
+		// Detailed tick timing for lag investigation
+		static readonly Stopwatch innerTickStopwatch = new();
+		const int InnerTickThresholdMs = 50;
+
 		static void InnerLogicTick(OrderManager orderManager)
 		{
 			var tick = RunTime;
@@ -647,11 +651,14 @@ namespace OpenRA
 
 				using (var sample = new PerfSample("tick_time"))
 				{
+					innerTickStopwatch.Restart();
 					orderManager.LastTickTime.AdvanceTickTime(tick);
 
 					Sound.Tick();
+					var afterSound = innerTickStopwatch.ElapsedMilliseconds;
 
 					Sync.RunUnsynced(world, orderManager.TickImmediate);
+					var afterTickImmediate = innerTickStopwatch.ElapsedMilliseconds;
 
 					if (world == null)
 					{
@@ -660,18 +667,37 @@ namespace OpenRA
 						return;
 					}
 
+					long afterTryTick = afterTickImmediate, afterWorldTick = afterTickImmediate, afterTickRender = afterTickImmediate;
+					var didTick = false;
+
 					if (orderManager.TryTick())
 					{
+						didTick = true;
+						afterTryTick = innerTickStopwatch.ElapsedMilliseconds;
+
 						Sync.RunUnsynced(world, () => world.OrderGenerator.Tick(world));
 
 						world.Tick();
+						afterWorldTick = innerTickStopwatch.ElapsedMilliseconds;
 
 						PerfHistory.Tick();
 					}
 
 					// Wait until we have done our first world Tick before TickRendering
 					if (orderManager.LocalFrameNumber > 0)
+					{
 						Sync.RunUnsynced(world, () => world.TickRender(worldRenderer));
+						afterTickRender = innerTickStopwatch.ElapsedMilliseconds;
+					}
+
+					var totalMs = innerTickStopwatch.ElapsedMilliseconds;
+					if (totalMs > InnerTickThresholdMs && didTick)
+					{
+						Log.Write("debug",
+							$"[LAG-TICK] {totalMs}ms: sound={afterSound}ms, tickImmediate={afterTickImmediate - afterSound}ms, " +
+							$"tryTick={afterTryTick - afterTickImmediate}ms, worldTick={afterWorldTick - afterTryTick}ms, " +
+							$"tickRender={afterTickRender - afterWorldTick}ms (actors={world.Actors.Count()})");
+					}
 				}
 
 				benchmark?.Tick(LocalTick);
