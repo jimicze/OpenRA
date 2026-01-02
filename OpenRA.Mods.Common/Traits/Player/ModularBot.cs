@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using OpenRA.Support;
 using OpenRA.Traits;
@@ -92,9 +93,19 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				Sync.RunUnsynced(Game.Settings.Debug.SyncCheckBotModuleCode, world, () =>
 				{
+					var sw = Stopwatch.StartNew();
 					foreach (var t in tickModules)
+					{
 						if (t.IsTraitEnabled())
+						{
+							var before = sw.ElapsedMilliseconds;
 							t.BotTick(this);
+							var after = sw.ElapsedMilliseconds;
+							var elapsed = after - before;
+							if (elapsed > 10)
+								Log.Write("debug", $"[LAG-BOT] {t.GetType().Name} took {elapsed}ms");
+						}
+					}
 				});
 			}
 
