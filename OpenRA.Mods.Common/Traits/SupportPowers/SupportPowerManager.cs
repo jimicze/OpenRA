@@ -114,7 +114,14 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			// order.OrderString is the key of the support power
 			if (Powers.TryGetValue(order.OrderString, out var sp))
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] ResolveOrder: key={order.OrderString}, Ready={sp.Ready}, Active={sp.Active}, RemainingTicks={sp.RemainingTicks}, TotalTicks={sp.TotalTicks}");
 				sp.Activate(order);
+			}
+			else
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] ResolveOrder: key={order.OrderString} NOT FOUND in Powers dictionary");
+			}
 		}
 
 		static readonly SupportPowerInstance[] NoInstances = [];
@@ -238,16 +245,29 @@ namespace OpenRA.Mods.Common.Traits
 
 		public virtual void Target()
 		{
+			Log.Write("debug", $"[SUPPORT-POWER] Target called: key={Key}, Ready={Ready}, Active={Active}, RemainingTicks={RemainingTicks}, TotalTicks={TotalTicks}");
+
 			if (!Ready)
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] Target REJECTED: key={Key} is not Ready (RemainingTicks={RemainingTicks})");
 				return;
+			}
 
 			var power = Instances.FirstOrDefault(i => !i.IsTraitPaused);
 
 			if (power == null)
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] Target REJECTED: key={Key} has no unpaused instance");
 				return;
+			}
 
 			if (!HasSufficientFunds(power))
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] Target REJECTED: key={Key} insufficient funds");
 				return;
+			}
+
+			Log.Write("debug", $"[SUPPORT-POWER] Target SUCCESS: key={Key}, building={power.Self.Info.Name}, proceeding to SelectTarget");
 
 			Game.Sound.PlayToPlayer(SoundType.UI, Manager.Self.Owner, Info.SelectTargetSound);
 			Game.Sound.PlayNotification(power.Self.World.Map.Rules, power.Self.Owner, "Speech",
@@ -260,8 +280,13 @@ namespace OpenRA.Mods.Common.Traits
 
 		public virtual void Activate(Order order)
 		{
+			Log.Write("debug", $"[SUPPORT-POWER] Activate called: key={Key}, Ready={Ready}, Active={Active}, RemainingTicks={RemainingTicks}, TotalTicks={TotalTicks}");
+
 			if (!Ready)
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] Activate REJECTED: key={Key} is not Ready");
 				return;
+			}
 
 			var power = Instances.Where(i => !i.IsTraitPaused && !i.IsTraitDisabled)
 				.MinByOrDefault(a =>
@@ -273,10 +298,18 @@ namespace OpenRA.Mods.Common.Traits
 				});
 
 			if (power == null)
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] Activate REJECTED: key={Key} has no valid power instance");
 				return;
+			}
 
 			if (!HasSufficientFunds(power, true))
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] Activate REJECTED: key={Key} insufficient funds");
 				return;
+			}
+
+			Log.Write("debug", $"[SUPPORT-POWER] Activate SUCCESS: key={Key}, power={power.Info.OrderName}, building={power.Self.Info.Name}");
 
 			// Note: order.Subject is the *player* actor
 			power.Activate(power.Self, order, Manager);

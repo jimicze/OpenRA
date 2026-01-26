@@ -100,8 +100,13 @@ namespace OpenRA.Mods.AS.Traits
 		public override void Activate(Actor self, Order order, SupportPowerManager manager)
 		{
 			var level = GetLevel();
+			Log.Write("debug", $"[SUPPORT-POWER] DetonateWeaponPower.Activate: OrderName={Info.OrderName}, level={level}, building={self.Info.Name}");
+
 			if (level == 0)
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] DetonateWeaponPower.Activate REJECTED: level=0");
 				return;
+			}
 
 			base.Activate(self, order, manager);
 			PlayLaunchSounds();
@@ -167,6 +172,7 @@ namespace OpenRA.Mods.AS.Traits
 
 		public override void SelectTarget(Actor self, string order, SupportPowerManager manager)
 		{
+			Log.Write("debug", $"[SUPPORT-POWER] DetonateWeaponPower.SelectTarget: order={order}, building={self.Info.Name}");
 			Game.Sound.PlayToPlayer(SoundType.UI, manager.Self.Owner, Info.SelectTargetSound);
 			self.World.OrderGenerator = new SelectDetonateWeaponPowerTarget(order, manager, this);
 		}
@@ -195,14 +201,20 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			world.CancelInputMode();
 			if (mi.Button == MouseButton.Left && world.Map.Contains(cell))
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] SelectDetonateWeaponPowerTarget.OrderInner: sending order={order}, cell={cell}");
 				yield return new Order(order, manager.Self, Target.FromCell(world, cell), false) { SuppressVisualFeedback = true };
+			}
 		}
 
 		protected override void Tick(World world)
 		{
 			// Cancel the OG if we can't use the power
 			if (!manager.Powers.ContainsKey(order))
+			{
+				Log.Write("debug", $"[SUPPORT-POWER] SelectDetonateWeaponPowerTarget.Tick: CANCELLING - order={order} not found in Powers");
 				world.CancelInputMode();
+			}
 		}
 
 		protected override IEnumerable<IRenderable> Render(WorldRenderer wr, World world) { yield break; }
